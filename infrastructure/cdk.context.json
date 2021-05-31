@@ -1,0 +1,11 @@
+{
+  "availability-zones:account=032326623602:region=ap-southeast-2": [
+    "ap-southeast-2a",
+    "ap-southeast-2b",
+    "ap-southeast-2c"
+  ],
+  "hosted-zone:account=032326623602:domainName=peterwooden.com:region=ap-southeast-2": {
+    "Id": "/hostedzone/Z05956822F62HQUM60NM9",
+    "Name": "peterwooden.com."
+  }
+}
