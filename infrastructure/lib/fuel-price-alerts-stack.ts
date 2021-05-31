@@ -42,6 +42,7 @@ export class FuelPriceAlertsStack extends cdk.Stack {
       runtime: lambda.Runtime.NODEJS_14_X,
       code: lambda.Code.fromAsset('src'),
       handler: 'fetch-prices.handler',
+      timeout: Duration.minutes(10),
       environment: {
         ...postgresDataApiParams,
         API_NSW_APIKEY: process.env.API_NSW_APIKEY || '',
