@@ -181,14 +181,7 @@ export const handler = async (event: any) => {
         }: {
             records: {
                 email: string;
-                alerts: {
-                    stationName: string;
-                    fuelType: string;
-                    price: number;
-                    timeWeightedPrice: number;
-                    changePercent: number;
-                    recentPrices: { time: string; price: number }[];
-                }[];
+                alerts: string;
             }[];
         } = result;
 
@@ -216,7 +209,19 @@ export const handler = async (event: any) => {
                                         <th>Past Week Average</th>
                                         <th>% Change</th>
                                     </tr>
-                                    ${alerts.map(
+                                    ${(
+                                        JSON.parse(alerts) as {
+                                            stationName: string;
+                                            fuelType: string;
+                                            price: number;
+                                            timeWeightedPrice: number;
+                                            changePercent: number;
+                                            recentPrices: {
+                                                time: string;
+                                                price: number;
+                                            }[];
+                                        }[]
+                                    ).map(
                                         (alert) => `<tr>
                                         <td>${alert.stationName}</td>
                                         <td>${alert.fuelType}</td>
