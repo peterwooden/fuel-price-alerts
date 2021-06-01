@@ -1,11 +1,11 @@
 // MODIFIED from https://github.com/windfish-studio/umzug-postgres-storage/blob/master/src/umzug-postgres-storage.js
 
 class UmzugPostgresStorage {
-    client: {query: (sql: string, params?: any[]) => Promise<{records: any[]}>};
+    client: {query: (sql: string, params?: any) => Promise<{records: any[]}>};
     table: string;
     column: string;
 
-    constructor({client, table = 'migrations', column = 'name'}: {client: {query: (sql: string, params?: any[]) => Promise<{records: any[]}>}, table?: string, column?: string}){
+    constructor({client, table = 'migrations', column = 'name'}: {client: {query: (sql: string, params?: any) => Promise<{records: any[]}>}, table?: string, column?: string}){
         this.client = client;
         this.table = table;
         this.column = column;
@@ -19,16 +19,16 @@ class UmzugPostgresStorage {
     async logMigration(migrationName: string) {
         await this.client.query(`
             INSERT INTO ${this.table} ("${this.column}") 
-                VALUES ($1)
+                VALUES (:migrationName)
             ON CONFLICT DO NOTHING
-        `, [migrationName]);
+        `, {migrationName});
     }
 
     async unlogMigration(migrationName: string) {
         await this.client.query(`
             DELETE FROM ${this.table} 
-            WHERE "${this.column}" = $1
-        `, [migrationName]);
+            WHERE "${this.column}" = :migrationName
+        `, {migrationName});
     }
 
     executed() {

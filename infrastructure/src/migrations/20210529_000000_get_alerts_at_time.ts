@@ -29,12 +29,12 @@ module.exports = {
                     WHERE p1.timestamp < t - INTERVAL '1 week' 
                     GROUP BY p1.station_code, p1.fuel_type
                     /*( -- Less performant but simpler
-                    SELECT DISTINCT ON (prices.station_code, prices.fuel_type)
-                    prices.station_code, prices.fuel_type, prices.timestamp, prices.price
-                    FROM prices
-                    WHERE prices.timestamp < t - INTERVAL '1 week'
-                    ORDER BY prices.station_code, prices.fuel_type, prices.timestamp DESC
-                )*/
+                        SELECT DISTINCT ON (prices.station_code, prices.fuel_type)
+                        prices.station_code, prices.fuel_type, prices.timestamp, prices.price
+                        FROM prices
+                        WHERE prices.timestamp < t - INTERVAL '1 week'
+                        ORDER BY prices.station_code, prices.fuel_type, prices.timestamp DESC
+                    )*/
                 )
                 SELECT 
                     stations.code::TEXT AS code, 
@@ -44,7 +44,7 @@ module.exports = {
                 FROM stations
                 JOIN (
                     SELECT DISTINCT ON (prices.station_code, prices.fuel_type)
-                    prices.station_code, prices.fuel_type, prices.timestamp, prices.price
+                        prices.station_code, prices.fuel_type, prices.timestamp, prices.price
                     FROM recent_prices prices
                     ORDER BY prices.station_code, prices.fuel_type, prices.timestamp DESC
                 ) current_price ON current_price.station_code = stations.code

@@ -1,7 +1,7 @@
 import * as cdk from '@aws-cdk/core';
 import * as s3 from '@aws-cdk/aws-s3';
 import * as lambda from '@aws-cdk/aws-lambda';
-import * as apigw from '@aws-cdk/aws-apigateway';
+import * as apigateway from '@aws-cdk/aws-apigateway';
 import * as events from '@aws-cdk/aws-events';
 import * as targets from '@aws-cdk/aws-events-targets';
 import * as rds from '@aws-cdk/aws-rds';
@@ -58,14 +58,6 @@ export class FuelPriceAlertsStack extends cdk.Stack {
 
     timerRule.addTarget(new targets.LambdaFunction(fetchPrices));
 
-    const register = new lambda.Function(this, 'Register', {
-      runtime: lambda.Runtime.NODEJS_14_X,
-      code: lambda.Code.fromAsset('src'),
-      handler: 'register.handler',
-      environment: postgresDataApiParams
-    });
-
-    postgres.grantDataApiAccess(register);
 
     const userPool = new cognito.UserPool(this, 'UserPool', {
       selfSignUpEnabled: true,
@@ -106,6 +98,30 @@ export class FuelPriceAlertsStack extends cdk.Stack {
       zoneName: 'peterwooden.com',
       subdomain: 'fuelpricealerts'
     });
+
+    const api = new apigateway.RestApi(this, "rest-api", {
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigateway.Cors.ALL_ORIGINS,
+        allowMethods: apigateway.Cors.ALL_METHODS // this is also the default
+      }
+    });
+
+    const alertSubscriptionsHandler = new lambda.Function(this, 'Alert subscriptions handler', {
+      runtime: lambda.Runtime.NODEJS_14_X,
+      code: lambda.Code.fromAsset('src'),
+      handler: 'alert-subscriptions.handler',
+      environment: {
+        ...postgresDataApiParams,
+        COGNITO_POOL_ID: userPool.userPoolId
+      }
+    });
+
+    postgres.grantDataApiAccess(alertSubscriptionsHandler);
+
+    const alertSubscriptions = api.root.addResource('alert-subscriptions');
+
+    alertSubscriptions.addMethod('POST', new apigateway.LambdaIntegration(alertSubscriptionsHandler));
+    alertSubscriptions.addMethod('GET', new apigateway.LambdaIntegration(alertSubscriptionsHandler));
 
     /*
 

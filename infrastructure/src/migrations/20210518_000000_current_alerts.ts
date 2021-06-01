@@ -33,7 +33,11 @@ module.exports = {
                     ORDER BY prices.station_code, prices.fuel_type, prices.timestamp DESC
                 )*/
             )
-            SELECT stations.code, current_price.fuel_type, current_price.price, previous_week_average.time_weighted_average
+            SELECT
+                stations.code,
+                current_price.fuel_type,
+                current_price.price,
+                previous_week_average.time_weighted_average
             FROM stations
             JOIN (
                 SELECT DISTINCT ON (prices.station_code, prices.fuel_type)
@@ -67,7 +71,8 @@ module.exports = {
                     FROM recent_prices prices
                 ) subquery
                 GROUP BY subquery.station_code, subquery.fuel_type
-            ) previous_week_average ON previous_week_average.station_code = stations.code AND previous_week_average.fuel_type = current_price.fuel_type
+            ) previous_week_average 
+            ON previous_week_average.station_code = stations.code AND previous_week_average.fuel_type = current_price.fuel_type
             WHERE 
                 current_price.price > 1.05 * previous_week_average.time_weighted_average 
         `);

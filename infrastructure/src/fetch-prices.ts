@@ -1,15 +1,14 @@
 import axios from 'axios';
-import * as format from 'pg-format';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { Client } from './rds';
 
-const { API_NSW_APIKEY, API_NSW_BASICAUTH, AWS_REGION, EMAIL_LOG } = process.env;
+const { API_NSW_APIKEY, API_NSW_BASICAUTH, AWS_REGION, EMAIL_LOG } =
+    process.env;
 
 const sesClient = new SESClient({ region: AWS_REGION });
 
 export const handler = async (event: any) => {
     try {
-    
         console.log('Connecting to DB...');
 
         const client = await Client();
@@ -31,14 +30,27 @@ export const handler = async (event: any) => {
 
         const {
             data: { stations, prices },
-        }: {data: {stations: {brandid: string,
-            stationid: string,
-            brand: string,
-            code: string,
-            name: string,
-            address: string,
-            location: { latitude: string, longitude: string },
-            state: string}[], prices: {stationcode: string, state: string, fueltype: string, price: string, lastupdated: string}[]}} = await axios({
+        }: {
+            data: {
+                stations: {
+                    brandid: string;
+                    stationid: string;
+                    brand: string;
+                    code: string;
+                    name: string;
+                    address: string;
+                    location: { latitude: string; longitude: string };
+                    state: string;
+                }[];
+                prices: {
+                    stationcode: string;
+                    state: string;
+                    fueltype: string;
+                    price: string;
+                    lastupdated: string;
+                }[];
+            };
+        } = await axios({
             method: 'get',
             url: 'https://api.onegov.nsw.gov.au/FuelPriceCheck/v2/fuel/prices?states=NSW',
             headers: {
@@ -54,19 +66,9 @@ export const handler = async (event: any) => {
         console.log('Inserting stations data...');
 
         await client.query(
-            format(
-                `
-                INSERT INTO stations (
-                    brand_id,
-                    station_id,
-                    brand,
-                    code,
-                    name,
-                    address,
-                    latitude,
-                    longitude,
-                    state
-                ) VALUES %L
+            `
+                INSERT INTO stations (brand_id, station_id, brand, code, name, address, latitude, longitude, state) 
+                VALUES (:brandid, :stationid, :brand, :code, :name, :address, :latitude, :longitude, :state)
                 ON CONFLICT (code)
                 DO UPDATE SET 
                     brand_id = EXCLUDED.brand_id,
@@ -78,17 +80,18 @@ export const handler = async (event: any) => {
                     longitude = EXCLUDED.longitude,
                     state = EXCLUDED.state
             `,
-                stations.map(
-                    ({
-                        brandid,
-                        stationid,
-                        brand,
-                        code,
-                        name,
-                        address,
-                        location: { latitude, longitude },
-                        state,
-                    }) => [
+            stations.map(
+                ({
+                    brandid,
+                    stationid,
+                    brand,
+                    code,
+                    name,
+                    address,
+                    location: { latitude, longitude },
+                    state,
+                }) => [
+                    {
                         brandid,
                         stationid,
                         brand,
@@ -98,54 +101,55 @@ export const handler = async (event: any) => {
                         latitude,
                         longitude,
                         state,
-                    ]
-                )
+                    },
+                ]
             )
         );
 
         console.log('Inserting prices data...');
 
         await client.query(
-            format(
-                `
-                INSERT INTO prices (
-                    station_code,
-                    state,
-                    fuel_type,
-                    price,
-                    timestamp
-                ) VALUES %L
+            `
+                INSERT INTO prices (station_code, state, fuel_type, price, timestamp) 
+                VALUES (:stationcode, :state, :fueltype, :price, :timestamp)
                 ON CONFLICT DO NOTHING
             `,
-                prices.map(
-                    ({ stationcode, state, fueltype, price, lastupdated }) => {
-                        const { day, month, year, time } =
-                            /(?<day>\d{2})\/(?<month>\d{2})\/(?<year>\d{4}) (?<time>.*)/.exec(
-                                lastupdated
-                            )?.groups as { day: string, month: string, year: string, time: string };
-                        return [
+            prices.map(
+                ({ stationcode, state, fueltype, price, lastupdated }) => {
+                    const { day, month, year, time } =
+                        /(?<day>\d{2})\/(?<month>\d{2})\/(?<year>\d{4}) (?<time>.*)/.exec(
+                            lastupdated
+                        )?.groups as {
+                            day: string;
+                            month: string;
+                            year: string;
+                            time: string;
+                        };
+                    return [
+                        {
                             stationcode,
                             state,
                             fueltype,
                             price,
-                            `${year}-${month}-${day}T${time}Z`,
-                        ];
-                    }
-                )
+                            timestamp: `${year}-${month}-${day}T${time}Z`,
+                        },
+                    ];
+                }
             )
         );
 
         console.log('Successfully inserted all data.');
 
+        const atTime = event?.atTime || 'NOW()';
         const result = await client.query(`
             WITH new_alerts AS (
                 INSERT INTO previous_alerts
                 SELECT
                     ca.code,
                     ca.fuel_type,
-                    NOW() as time
-                FROM current_alerts ca
-                LEFT JOIN previous_alerts pa ON pa.station_code = ca.code AND pa.fuel_type = ca.fuel_type AND pa.time > NOW() - INTERVAL '1 week'
+                    ${atTime} as time
+                FROM get_alerts_at_time(${atTime}) as ca
+                LEFT JOIN previous_alerts pa ON pa.station_code = ca.code AND pa.fuel_type = ca.fuel_type AND ${atTime} - INTERVAL '1 week' < pa.time AND pa.time <= ${atTime}
                 WHERE pa.station_code IS NULL
                 RETURNING *
             )
@@ -159,15 +163,27 @@ export const handler = async (event: any) => {
                     'changePercent', (ca.price - ca.time_weighted_average) / ca.time_weighted_average * 100
                 )) AS "alerts"
             FROM new_alerts na
-            JOIN current_alerts ca ON na.station_code = ca.code AND na.fuel_type = ca.fuel_type
+            JOIN get_alerts_at_time(${atTime}) as ca ON na.station_code = ca.code AND na.fuel_type = ca.fuel_type
             JOIN users_stations_fuels usf ON usf.station_code = ca.code AND usf.fuel_type = ca.fuel_type
             JOIN users u ON u.uuid = usf.user_uuid
             JOIN stations s ON s.code = ca.code
-            WHERE u.active
             GROUP BY u.uuid
         `);
 
-        const { records }: { records: { email: string, alerts: { stationName: string, fuelType: string, price: number, timeWeightedPrice: number, changePercent: number }[] }[] } = result;
+        const {
+            records,
+        }: {
+            records: {
+                email: string;
+                alerts: {
+                    stationName: string;
+                    fuelType: string;
+                    price: number;
+                    timeWeightedPrice: number;
+                    changePercent: number;
+                }[];
+            }[];
+        } = result;
 
         // TODO: Make these serial and throttled to 14/second and 50k/day
         records.forEach(async ({ email, alerts }) => {
@@ -182,7 +198,24 @@ export const handler = async (event: any) => {
                         /* required */
                         Html: {
                             Charset: 'UTF-8',
-                            Data: 'HTML_FORMAT_BODY',
+                            Data: `
+                                <table>
+                                    <tr>
+                                        <th>Station</th>
+                                        <th>Fuel Type</th>
+                                        <th>Current Price</th>
+                                        <th>Past Week Average</th>
+                                        <th>% Change</th>
+                                    </tr>
+                                    ${alerts.map(alert => `<tr>
+                                        <td>${alert.stationName}</td>
+                                        <td>${alert.fuelType}</td>
+                                        <td>${alert.price.toFixed(1)}</td>
+                                        <td>${alert.timeWeightedPrice.toFixed(1)}</td>
+                                        <td>${alert.changePercent.toFixed(1)}</td>
+                                    </tr>`)}
+                                </table>
+                            `,
                         },
                         Text: {
                             Charset: 'UTF-8',
@@ -199,19 +232,16 @@ export const handler = async (event: any) => {
             };
 
             try {
-                const data = await sesClient.send(
-                    new SendEmailCommand(params)
-                );
+                const data = await sesClient.send(new SendEmailCommand(params));
                 console.log('Success', data);
                 //return data; // For unit tests.
             } catch (err) {
                 console.log('Error', err);
             }
-            
         });
 
         console.log(JSON.stringify(result));
-    } catch(e) {
+    } catch (e) {
         console.log('Error:', e);
     }
 

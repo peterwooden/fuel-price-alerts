@@ -3,10 +3,7 @@ module.exports = {
         return client.query(`
             CREATE TABLE users (
                 uuid UUID PRIMARY KEY,
-                email TEXT NOT NULL,
-                password TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL,
-                active BOOLEAN
+                email TEXT NOT NULL
             );
 
             CREATE TABLE users_stations_fuels (
