@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { Client } from './rds';
+import PromiseThrottle from 'promise-throttle';
 
 const { API_NSW_APIKEY, API_NSW_BASICAUTH, AWS_REGION, EMAIL_LOG } =
     process.env;
@@ -187,80 +188,82 @@ export const handler = async (event: any) => {
 
         console.log('Records received', JSON.stringify(records));
 
-        // TODO: Make these serial and throttled to 14/second and 50k/day
-        records.forEach(async ({ email, alerts }) => {
-            // Set the parameters
-            const params = {
-                Destination: {
-                    ToAddresses: [email],
-                },
-                Message: {
+        const emailParams = records.map(({ email, alerts }) => ({
+            Destination: {
+                ToAddresses: [email],
+            },
+            Message: {
+                /* required */
+                Body: {
                     /* required */
-                    Body: {
-                        /* required */
-                        Html: {
-                            Charset: 'UTF-8',
-                            Data: `
-                                <table>
-                                    <tr>
-                                        <th>Station</th>
-                                        <th>Fuel Type</th>
-                                        <th>Current Price</th>
-                                        <th>Past Week Average</th>
-                                        <th>% Change</th>
-                                    </tr>
-                                    ${(
-                                        JSON.parse(alerts) as {
-                                            stationName: string;
-                                            fuelType: string;
-                                            price: number;
-                                            timeWeightedPrice: number;
-                                            changePercent: number;
-                                            recentPrices: {
-                                                time: string;
-                                                price: number;
-                                            }[];
-                                        }[]
-                                    ).map(
-                                        (alert) => `<tr>
-                                        <td>${alert.stationName}</td>
-                                        <td>${alert.fuelType}</td>
-                                        <td>${alert.price.toFixed(1)}</td>
-                                        <td>${alert.timeWeightedPrice.toFixed(
-                                            1
-                                        )}</td>
-                                        <td>${alert.changePercent.toFixed(
-                                            1
-                                        )}</td>
-                                    </tr>`
-                                    )}
-                                </table>
-                            `,
-                        },
-                        Text: {
-                            Charset: 'UTF-8',
-                            Data: JSON.stringify(alerts),
-                        },
-                    },
-                    Subject: {
+                    Html: {
                         Charset: 'UTF-8',
-                        Data: 'Fuel Price Alert',
+                        Data: `
+                            <table>
+                                <tr>
+                                    <th>Station</th>
+                                    <th>Fuel Type</th>
+                                    <th>Current Price</th>
+                                    <th>Past Week Average</th>
+                                    <th>% Change</th>
+                                </tr>
+                                ${(
+                                    JSON.parse(alerts) as {
+                                        stationName: string;
+                                        fuelType: string;
+                                        price: number;
+                                        timeWeightedPrice: number;
+                                        changePercent: number;
+                                        recentPrices: {
+                                            time: string;
+                                            price: number;
+                                        }[];
+                                    }[]
+                                ).map(
+                                    (alert) => `<tr>
+                                    <td>${alert.stationName}</td>
+                                    <td>${alert.fuelType}</td>
+                                    <td>${alert.price.toFixed(1)}</td>
+                                    <td>${alert.timeWeightedPrice.toFixed(
+                                        1
+                                    )}</td>
+                                    <td>${alert.changePercent.toFixed(
+                                        1
+                                    )}</td>
+                                </tr>`
+                                )}
+                            </table>
+                        `,
+                    },
+                    Text: {
+                        Charset: 'UTF-8',
+                        Data: JSON.stringify(alerts),
                     },
                 },
-                Source: 'fuel-alerts@peterwooden.com', // SENDER_ADDRESS
-                ReplyToAddresses: [],
-            };
+                Subject: {
+                    Charset: 'UTF-8',
+                    Data: 'Fuel Price Alert',
+                },
+            },
+            Source: 'fuel-alerts@peterwooden.com', // SENDER_ADDRESS
+            ReplyToAddresses: [],
+        }));
 
+        
+        const promiseThrottle = new PromiseThrottle({
+            requestsPerSecond: 14,
+            promiseImplementation: Promise
+        });
+
+        await promiseThrottle.addAll(emailParams.map((params) => async () => {
             try {
                 const data = await sesClient.send(new SendEmailCommand(params));
                 console.log('Success', data);
-                //return data; // For unit tests.
             } catch (err) {
                 console.log('Error', err);
             }
-        });
+        }));
 
-        console.log(JSON.stringify(result));
     } catch (e) {
         console.log('Error:', e);
     }

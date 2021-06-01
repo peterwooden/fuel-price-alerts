@@ -25,6 +25,7 @@
     "data-api-client": "^1.2.0",
     "jsonwebtoken": "^8.5.1",
     "jwk-to-pem": "^2.0.5",
+    "promise-throttle": "^1.1.2",
     "source-map-support": "^0.5.16",
     "umzug": "^2.3.0"
   },
