@@ -111,7 +111,7 @@ export const handler = async (event: any) => {
         await client.query(
             `
                 INSERT INTO prices (station_code, state, fuel_type, price, timestamp) 
-                VALUES (:stationcode, :state, :fueltype, :price, :timestamp)
+                VALUES (:stationcode, :state, :fueltype, :price, (:timestamp)::timestamptz)
                 ON CONFLICT DO NOTHING
             `,
             prices.map(
@@ -141,33 +141,39 @@ export const handler = async (event: any) => {
         console.log('Successfully inserted all data.');
 
         const atTime = event?.atTime || 'NOW()';
+
+        console.log(`Getting alerts at time: ${atTime}`);
+
         const result = await client.query(`
-            WITH new_alerts AS (
-                INSERT INTO previous_alerts
-                SELECT
-                    ca.code,
-                    ca.fuel_type,
-                    ${atTime} as time
-                FROM get_alerts_at_time(${atTime}) as ca
-                LEFT JOIN previous_alerts pa ON pa.station_code = ca.code AND pa.fuel_type = ca.fuel_type AND ${atTime} - INTERVAL '1 week' < pa.time AND pa.time <= ${atTime}
-                WHERE pa.station_code IS NULL
-                RETURNING *
-            )
             SELECT 
                 u.email AS "email",
                 json_agg(json_build_object(
                     'stationName', s.name,
-                    'fuelType', ca.fuel_type,
-                    'price', ca.price,
-                    'timeWeightedPrice', ca.time_weighted_average,
-                    'changePercent', (ca.price - ca.time_weighted_average) / ca.time_weighted_average * 100
-                )) AS "alerts"
-            FROM new_alerts na
-            JOIN get_alerts_at_time(${atTime}) as ca ON na.station_code = ca.code AND na.fuel_type = ca.fuel_type
-            JOIN users_stations_fuels usf ON usf.station_code = ca.code AND usf.fuel_type = ca.fuel_type
+                    'fuelType', trends.fuel_type,
+                    'price', trends.price,
+                    'timeWeightedPrice', trends.time_weighted_average,
+                    'changePercent', trends.change * 100,
+                    'recentPrices', trends.prices
+                ) ORDER BY trends.change DESC) AS "alerts"
+            FROM get_price_trends_at_time(${atTime}) as trends
+            JOIN users_stations_fuels usf ON usf.station_code = trends.code AND usf.fuel_type = trends.fuel_type
             JOIN users u ON u.uuid = usf.user_uuid
-            JOIN stations s ON s.code = ca.code
+            JOIN stations s ON s.code = trends.code
+            LEFT JOIN previous_alerts pa ON pa.station_code = trends.code AND pa.fuel_type = trends.fuel_type AND ${atTime} - INTERVAL '1 week' < pa.time AND pa.time <= ${atTime}
+            WHERE pa.station_code IS NULL
             GROUP BY u.uuid
+            HAVING MAX(trends.change) > 0.05
+        `);
+
+        await client.query(`
+            INSERT INTO previous_alerts
+            SELECT
+                trends.code AS station_code,
+                trends.fuel_type AS fuel_type,
+                ${atTime} as time
+            FROM get_price_trends_at_time(${atTime}) as trends
+            LEFT JOIN previous_alerts pa ON pa.station_code = trends.code AND pa.fuel_type = trends.fuel_type AND ${atTime} - INTERVAL '1 week' < pa.time AND pa.time <= ${atTime}
+            WHERE pa.station_code IS NULL AND trends.change > 0.05
         `);
 
         const {
@@ -181,9 +187,12 @@ export const handler = async (event: any) => {
                     price: number;
                     timeWeightedPrice: number;
                     changePercent: number;
+                    recentPrices: { time: string; price: number }[];
                 }[];
             }[];
         } = result;
+
+        console.log('Records received', JSON.stringify(records));
 
         // TODO: Make these serial and throttled to 14/second and 50k/day
         records.forEach(async ({ email, alerts }) => {
@@ -207,13 +216,19 @@ export const handler = async (event: any) => {
                                         <th>Past Week Average</th>
                                         <th>% Change</th>
                                     </tr>
-                                    ${alerts.map(alert => `<tr>
+                                    ${alerts.map(
+                                        (alert) => `<tr>
                                         <td>${alert.stationName}</td>
                                         <td>${alert.fuelType}</td>
                                         <td>${alert.price.toFixed(1)}</td>
-                                        <td>${alert.timeWeightedPrice.toFixed(1)}</td>
-                                        <td>${alert.changePercent.toFixed(1)}</td>
-                                    </tr>`)}
+                                        <td>${alert.timeWeightedPrice.toFixed(
+                                            1
+                                        )}</td>
+                                        <td>${alert.changePercent.toFixed(
+                                            1
+                                        )}</td>
+                                    </tr>`
+                                    )}
                                 </table>
                             `,
                         },
