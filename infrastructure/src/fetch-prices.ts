@@ -174,9 +174,8 @@ export const handler = async (event: any) => {
             JOIN users u ON u.uuid = usf.user_uuid
             JOIN stations s ON s.code = trends.code
             LEFT JOIN previous_alerts pa ON pa.station_code = trends.code AND pa.fuel_type = trends.fuel_type AND ${atTime} - INTERVAL '1 week' < pa.time AND pa.time <= ${atTime}
-            WHERE pa.station_code IS NULL
             GROUP BY u.uuid
-            HAVING MAX(trends.change) > 0.05
+            HAVING MAX(trends.change) > 0.05 AND SUM(CASE WHEN pa.station_code IS NULL AND trends.change > 0.05 THEN 1 ELSE 0 END) > 0
         `);
 
         await client.query(`
