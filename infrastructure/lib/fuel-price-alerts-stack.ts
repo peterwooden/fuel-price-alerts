@@ -8,8 +8,12 @@ import * as rds from '@aws-cdk/aws-rds';
 import { Duration } from '@aws-cdk/core';
 import * as ec2 from '@aws-cdk/aws-ec2';
 import * as cognito from '@aws-cdk/aws-cognito';
+import * as iam from '@aws-cdk/aws-iam';
 import { SPADeploy } from 'cdk-spa-deploy';
 require('dotenv').config();
+
+const SES_REGION = 'ap-southeast-2';
+const SES_EMAIL_FROM = 'peterwooden.com';
 
 export class FuelPriceAlertsStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
@@ -51,6 +55,23 @@ export class FuelPriceAlertsStack extends cdk.Stack {
     });
 
     postgres.grantDataApiAccess(fetchPrices);
+
+
+    fetchPrices.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'ses:SendEmail',
+          'ses:SendRawEmail',
+          'ses:SendTemplatedEmail',
+        ],
+        resources: [
+          `arn:aws:ses:${SES_REGION}:${
+            cdk.Stack.of(this).account
+          }:identity/${SES_EMAIL_FROM}`,
+        ],
+      }),
+    )
 
     const timerRule = new events.Rule(this, 'TimerRule', {
       schedule: events.Schedule.rate(Duration.hours(2))
@@ -110,6 +131,7 @@ export class FuelPriceAlertsStack extends cdk.Stack {
       runtime: lambda.Runtime.NODEJS_14_X,
       code: lambda.Code.fromAsset('src'),
       handler: 'alert-subscriptions.handler',
+      timeout: Duration.minutes(2),
       environment: {
         ...postgresDataApiParams,
         COGNITO_POOL_ID: userPool.userPoolId

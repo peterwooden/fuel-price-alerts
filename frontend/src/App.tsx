@@ -1,8 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import './App.css';
 import Amplify, { Auth } from 'aws-amplify';
-import { withAuthenticator, AmplifySignOut } from '@aws-amplify/ui-react';
-import { BrowserRouter as Router, Switch, Route, Link } from 'react-router-dom';
+import { withAuthenticator } from '@aws-amplify/ui-react';
+import {
+    BrowserRouter as Router,
+    Switch,
+    Route,
+    Link,
+    Redirect,
+} from 'react-router-dom';
 import Stations from './stations';
 import { Map, Marker, Bounds } from 'pigeon-maps';
 import { useDebounce } from 'use-debounce';
@@ -32,6 +38,8 @@ Amplify.configure({
         //authenticationFlowType: 'USER_PASSWORD_AUTH',
     },
 });
+
+const arrAvg = (arr: number[]) => arr.reduce((a,b) => a + b, 0) / arr.length
 
 const AccountPage = withAuthenticator(() => {
     const fuelTypes = [
@@ -85,7 +93,10 @@ const AccountPage = withAuthenticator(() => {
         }
     }, [debouncedBounds, fuelType]);
 
+    const [pending, setPending] = useState(false);
+
     const subscribeCallback = useCallback(async () => {
+        setPending(true);
         const jwt = (await Auth.currentSession()).getIdToken().getJwtToken();
         axios
             .post(
@@ -98,10 +109,10 @@ const AccountPage = withAuthenticator(() => {
                     headers: { Authorization: `Bearer ${jwt}` },
                 }
             )
-            .then(console.log)
-            .catch(err => {
+            .then(() => setPending(false))
+            .catch((err) => {
                 console.error(err);
-                alert('Error in saving subscriptions.')
+                alert('Error in saving subscriptions.');
             });
     }, [selectedStations, fuelType]);
 
@@ -111,99 +122,152 @@ const AccountPage = withAuthenticator(() => {
             const jwt = (await Auth.currentSession())
                 .getIdToken()
                 .getJwtToken();
-            const response = (await axios
-                .get(
-                    ALERT_SUBSCRIPTIONS_URL,
-                    {
-                        headers: { Authorization: `Bearer ${jwt}` },
-                    }
-                )).data;
+            const response = (
+                await axios.get(ALERT_SUBSCRIPTIONS_URL, {
+                    headers: { Authorization: `Bearer ${jwt}` },
+                })
+            ).data;
             const data: { stationCode: string; fuelType: string }[] = response;
 
-            
             if (data.length) {
                 setFuelType(data[0].fuelType); // TODO: Find a better way to represent the data so that more than just one layer of fuel types are active at once
-                const stationCodes = new Set(data.map(record => record.stationCode));
-                setSelectedStations(Stations.filter(station => stationCodes.has(String(station.code))));
+                const stationCodes = new Set(
+                    data.map((record) => record.stationCode)
+                );
+                const selectedStations = Stations.filter((station) =>
+                stationCodes.has(String(station.code))
+            );
+                setSelectedStations(
+                    selectedStations
+                );
+                setCenter([arrAvg(selectedStations.map(station => station.latitude)), arrAvg(selectedStations.map(station => station.longitude))]);
             }
         }
         fetchCurrentSubscriptions();
     }, []);
 
+    const [signedIn, setSignedIn] = useState(true);
+
+
+    if (!signedIn) {
+        return <Redirect to="/" />;
+    }
+
     return (
-        <div className="App">
-            <AmplifySignOut />
-            <div>
-                <div>1. Select fuel type</div>
-                <div>
-                    <select
-                        onChange={(e) => setFuelType(e.target.value)}
-                        value={fuelType}
-                    >
-                        {fuelTypes.map((fuelType, i) => (
-                            <option value={fuelType} key={i}>{fuelType}</option>
-                        ))}
-                    </select>
-                </div>
-                <div>2. Select up to 5 stations</div>
-                <div>
-                    <Map
-                        height={350}
-                        center={center}
-                        zoom={zoom}
-                        onBoundsChanged={({ center, zoom, bounds }) => {
-                            setCenter(center);
-                            setZoom(zoom);
-                            setBounds(bounds);
+        <div className="w-screen">
+            <div className="shadow-lg w-full py-2">
+                <div className="container mx-auto flex flex-row justify-between px-5">
+                    <span className="font-bold text-xl">Fuel Price Alerts</span>
+                    <button
+                        onClick={async () => {
+                            await Auth.signOut();
+                            setSignedIn(false);
                         }}
+                        className="inset-0 flex items-center justify-center bg-white hover:bg-gray-200 text-gray-600 text-md leading-6 font-semibold py-1 px-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-offset-2 focus:ring-offset-white focus:ring-gray-500 focus:outline-none transition-colors duration-200"
                     >
-                        {relevantStations.map((station, i) => (
-                            <Marker
-                                key={i}
-                                anchor={[station.latitude, station.longitude]}
-                                color={
-                                    selectedStations.includes(station)
-                                        ? '#FF3333'
-                                        : undefined
-                                }
-                                onClick={() =>
-                                    setSelectedStations((selectedStations) => {
-                                        if (
-                                            selectedStations.includes(station)
-                                        ) {
-                                            return selectedStations.filter(
-                                                (s) => s !== station
-                                            );
-                                        } else {
-                                            return selectedStations.concat(
-                                                station
-                                            );
-                                        }
-                                    })
-                                }
-                            />
-                        ))}
-                    </Map>
+                        Sign out
+                    </button>
                 </div>
+            </div>
+            <div className="container mx-auto my-5">
                 <div>
-                    <ul>
-                        {selectedStations.map((s, i) => (
-                            <li key={i}>{s.name}</li>
-                        ))}
-                    </ul>
-                </div>
-                <div>
-                    {selectedStations.length > 0 &&
-                        selectedStations.length <= 5 && (
-                            <button onClick={subscribeCallback}>
-                                Subscribe
+                    <div className="my-4">
+                        <span className="text-lg font-semibold">
+                            1. Select fuel type
+                        </span>
+                        <select
+                            onChange={(e) => setFuelType(e.target.value)}
+                            value={fuelType}
+                            className="border-2 rounded border-gray-400 px-2 ml-4"
+                        >
+                            {fuelTypes.map((fuelType, i) => (
+                                <option value={fuelType} key={i}>
+                                    {fuelType}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="text-lg font-semibold">
+                        2. Select up to 5 stations
+                    </div>
+                    <div className="shadow m-2">
+                        <Map
+                            height={350}
+                            center={center}
+                            zoom={zoom}
+                            onBoundsChanged={({ center, zoom, bounds }) => {
+                                setCenter(center);
+                                setZoom(zoom);
+                                setBounds(bounds);
+                            }}
+                        >
+                            {relevantStations.map((station, i) => (
+                                <Marker
+                                    key={i}
+                                    anchor={[
+                                        station.latitude,
+                                        station.longitude,
+                                    ]}
+                                    color={
+                                        selectedStations.includes(station)
+                                            ? '#FF3333'
+                                            : undefined
+                                    }
+                                    onClick={() =>
+                                        setSelectedStations(
+                                            (selectedStations) => {
+                                                if (
+                                                    selectedStations.includes(
+                                                        station
+                                                    )
+                                                ) {
+                                                    return selectedStations.filter(
+                                                        (s) => s !== station
+                                                    );
+                                                } else {
+                                                    return selectedStations.concat(
+                                                        station
+                                                    );
+                                                }
+                                            }
+                                        )
+                                    }
+                                />
+                            ))}
+                        </Map>
+                    </div>
+                    <div>
+                        <ul className="list-disc list-inside">
+                            {selectedStations.map((s, i) => (
+                                <li key={i}>{s.name}</li>
+                            ))}
+                        </ul>
+                    </div>
+                    <div className="my-3">
+                        {selectedStations.length > 0 &&
+                            (selectedStations.length <= 5 ? (
+                                pending ? <button disabled
+                                className="inset-0 flex items-center justify-center bg-gray-500 text-white text-md leading-6 font-semibold py-1 px-4 rounded-lg"
+                            >
+                                Saving...
                             </button>
-                        )}
+                                : <button
+                                    className="inset-0 flex items-center justify-center bg-blue-600 hover:bg-blue-400 text-white text-md leading-6 font-semibold py-1 px-4 rounded-lg focus:ring-2 focus:ring-offset-2 focus:ring-offset-white focus:ring-blue-600 focus:outline-none transition-colors duration-200"
+                                    onClick={subscribeCallback}
+                                >
+                                    Save
+                                </button>
+                            ) : (
+                                <span className="text-red-600 font-bold">
+                                    Too many
+                                </span>
+                            ))}
+                    </div>
                 </div>
             </div>
         </div>
     );
-});
+}, {});
 
 function App() {
     return (
@@ -211,7 +275,9 @@ function App() {
             <Switch>
                 <Route exact path="/">
                     Welcome to Fuel Price Alerts!{' '}
-                    <Link to="/account">Sign in/Sign up</Link>
+                    <Link to="/account" className="underline text-blue-600">
+                        Sign in/Sign up
+                    </Link>
                 </Route>
                 <Route path="/account">
                     <AccountPage />

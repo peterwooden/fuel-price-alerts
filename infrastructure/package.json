@@ -36,6 +36,7 @@
     "@aws-cdk/aws-route53-targets": "^1.106.1",
     "@aws-cdk/aws-s3": "^1.106.1",
     "@aws-cdk/aws-s3-deployment": "^1.106.1",
+    "@aws-cdk/aws-ses": "^1.106.1",
     "@aws-cdk/core": "1.106.1",
     "cdk-spa-deploy": "^1.103.1",
     "constructs": "^3.3.75",

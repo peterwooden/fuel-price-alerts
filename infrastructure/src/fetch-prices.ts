@@ -1,12 +1,25 @@
 import axios from 'axios';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { Client } from './rds';
-import PromiseThrottle from 'promise-throttle';
 
 const { API_NSW_APIKEY, API_NSW_BASICAUTH, AWS_REGION, EMAIL_LOG } =
     process.env;
 
 const sesClient = new SESClient({ region: AWS_REGION });
+
+const EMAIL_CONCURRENCY_LIMIT = 14;
+
+type Alerts = {
+    stationName: string;
+    fuelType: string;
+    price: number;
+    timeWeightedPrice: number;
+    changePercent: number;
+    recentPrices: {
+        time: string;
+        price: number;
+    }[];
+}[];
 
 export const handler = async (event: any) => {
     try {
@@ -188,17 +201,23 @@ export const handler = async (event: any) => {
 
         console.log('Records received', JSON.stringify(records));
 
-        const emailParams = records.map(({ email, alerts }) => ({
-            Destination: {
-                ToAddresses: [email],
-            },
-            Message: {
-                /* required */
-                Body: {
-                    /* required */
-                    Html: {
-                        Charset: 'UTF-8',
-                        Data: `
+        const emailParams = await Promise.all(
+            records.map(async ({ email, alerts }) => {
+                const data = JSON.parse(alerts) as Alerts;
+                const cheapestStation = [...data].sort((a, b) => a.price - b.price)[0];
+                return {
+                    Destination: {
+                        ToAddresses: [email],
+                    },
+                    Message: {
+                        /* required */
+                        Body: {
+                            /* required */
+                            Html: {
+                                Charset: 'UTF-8',
+                                Data: `
+                            <div>Hi, fuel prices are rising.</div>
+                            <div>Go to ${cheapestStation.stationName} for the cheapest fuel at ${cheapestStation.price}c/L.</div>
                             <table>
                                 <tr>
                                     <th>Station</th>
@@ -207,63 +226,75 @@ export const handler = async (event: any) => {
                                     <th>Past Week Average</th>
                                     <th>% Change</th>
                                 </tr>
-                                ${(
-                                    JSON.parse(alerts) as {
-                                        stationName: string;
-                                        fuelType: string;
-                                        price: number;
-                                        timeWeightedPrice: number;
-                                        changePercent: number;
-                                        recentPrices: {
-                                            time: string;
-                                            price: number;
-                                        }[];
-                                    }[]
-                                ).map(
-                                    (alert) => `<tr>
+                                ${data
+                                    .map(
+                                        (alert) => `<tr>
                                     <td>${alert.stationName}</td>
                                     <td>${alert.fuelType}</td>
                                     <td>${alert.price.toFixed(1)}</td>
                                     <td>${alert.timeWeightedPrice.toFixed(
                                         1
                                     )}</td>
-                                    <td>${alert.changePercent.toFixed(
-                                        1
-                                    )}</td>
+                                    <td>${
+                                        alert.changePercent > 0 ? '+' : ''
+                                    }${alert.changePercent.toFixed(1)}%</td>
                                 </tr>`
-                                )}
+                                    )
+                                    .join('')}
                             </table>
+                            <div>
+                                <img src="${await pricesToImageSrc(data).catch(
+                                    (err) => {
+                                        console.log(
+                                            'Error making image URL',
+                                            err,
+                                            alerts
+                                        );
+                                        return 'Error producing image';
+                                    }
+                                )}"/>
+                            </div>
                         `,
+                            },
+                            Text: {
+                                Charset: 'UTF-8',
+                                Data: JSON.stringify(alerts),
+                            },
+                        },
+                        Subject: {
+                            Charset: 'UTF-8',
+                            Data: 'Fuel Price Alert',
+                        },
                     },
-                    Text: {
-                        Charset: 'UTF-8',
-                        Data: JSON.stringify(alerts),
-                    },
-                },
-                Subject: {
-                    Charset: 'UTF-8',
-                    Data: 'Fuel Price Alert',
-                },
-            },
-            Source: 'fuel-alerts@peterwooden.com', // SENDER_ADDRESS
-            ReplyToAddresses: [],
-        }));
+                    Source: 'fuel-alerts@peterwooden.com', // SENDER_ADDRESS
+                    ReplyToAddresses: [],
+                };
+            })
+        );
 
-        
-        const promiseThrottle = new PromiseThrottle({
-            requestsPerSecond: 14,
-            promiseImplementation: Promise
-        });
+        const delayMS = (t: number) => {
+            return new Promise((resolve) => setTimeout(resolve, t));
+        };
 
-        await promiseThrottle.addAll(emailParams.map((params) => async () => {
-            try {
-                const data = await sesClient.send(new SendEmailCommand(params));
-                console.log('Success', data);
-            } catch (err) {
-                console.log('Error', err);
-            }
-        }));
-
+        // Throttle to 14/s
+        for (let i = 0; i < emailParams.length; i += EMAIL_CONCURRENCY_LIMIT) {
+            await Promise.all([
+                ...emailParams
+                    .slice(i, i + EMAIL_CONCURRENCY_LIMIT)
+                    .map(async (params) => {
+                        try {
+                            // Send email
+                            const data = await sesClient.send(
+                                new SendEmailCommand(params)
+                            );
+                            console.log('Success', data);
+                        } catch (err) {
+                            console.log('Error', err);
+                        }
+                    }),
+                delayMS(1000),
+            ]);
+        }
     } catch (e) {
         console.log('Error:', e);
     }
@@ -276,3 +307,60 @@ export const handler = async (event: any) => {
     };
     return response;
 };
+
+async function pricesToImageSrc(alerts: Alerts) {
+    const maxX = new Date(
+        Math.max(
+            ...alerts.map((alert) =>
+                new Date(alert.recentPrices.slice(-1)[0].time).getTime()
+            )
+        )
+    ).toISOString();
+    const minX = new Date(
+        new Date(maxX).getTime() - 7 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const colors = [
+        'rgba(255,99,132,0.5)',
+        'rgba(255,159,64,0.5)',
+        'rgba(255,205,86,0.5)',
+        'rgba(75,192,192,0.5)',
+        'rgba(54,162,235,0.5)',
+    ];
+    return `https://image-charts.com/chart.js/2.8.0?encoding=base64&width=500&height=300&bkg=white&c=${new Buffer(
+        JSON.stringify({
+            type: 'line',
+            data: {
+                datasets: alerts.map((alert, i) => ({
+                    label: alert.stationName,
+                    borderColor: colors[i],
+                    backgroundColor: colors[i],
+                    fill: false,
+                    data: alert.recentPrices
+                        .map(({ time, price }) => ({
+                            x:
+                                time < minX
+                                    ? minX
+                                    : new Date(time).toISOString(),
+                            y: price,
+                        }))
+                        .concat({
+                            x: maxX,
+                            y: alert.recentPrices.slice(-1)[0].price,
+                        }),
+                    steppedLine: true,
+                })),
+            },
+            options: {
+                scales: {
+                    xAxes: [
+                        {
+                            type: 'time',
+                            max: maxX,
+                            min: minX,
+                        },
+                    ],
+                },
+            },
+        })
+    ).toString('base64')}`;
+}
