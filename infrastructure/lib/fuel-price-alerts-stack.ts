@@ -10,6 +10,7 @@ import * as ec2 from '@aws-cdk/aws-ec2';
 import * as cognito from '@aws-cdk/aws-cognito';
 import * as iam from '@aws-cdk/aws-iam';
 import { SPADeploy } from 'cdk-spa-deploy';
+import { SubnetType } from '@aws-cdk/aws-ec2';
 require('dotenv').config();
 
 const SES_REGION = 'ap-southeast-2';
@@ -19,15 +20,25 @@ export class FuelPriceAlertsStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    const vpc = new ec2.Vpc(this, 'FuelPriceVPC', {
-      maxAzs: 2
+    const vpc = new ec2.Vpc(this, 'FuelPriceAlertsVPC', {
+      maxAzs: 2,
+      natGateways: 0,
+      subnetConfiguration: [
+        {
+          subnetType: SubnetType.PUBLIC,
+          name: 'rds-isolated'
+        }
+      ]
     });
 
-    const postgres = new rds.ServerlessCluster(this, 'Postgres', {
+    const postgres = new rds.ServerlessCluster(this, 'RDS', {
       engine: rds.DatabaseClusterEngine.AURORA_POSTGRESQL,
-      parameterGroup: rds.ParameterGroup.fromParameterGroupName(this, 'ParameterGroup', 'default.aurora-postgresql10'),
+      parameterGroup: rds.ParameterGroup.fromParameterGroupName(this, 'RDSParameterGroup', 'default.aurora-postgresql10'),
       vpc,
       defaultDatabaseName: 'postgres',
+      vpcSubnets: {
+        subnetType: SubnetType.PUBLIC
+      },
       scaling: {
         autoPause: Duration.minutes(5),
         minCapacity: rds.AuroraCapacityUnit.ACU_2,
