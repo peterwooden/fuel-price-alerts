@@ -5,7 +5,7 @@ npm ci
 
 echo Building infrastructure...
 
-cd infrastructure
+cd ..
 npm ci
 npm run build
 
