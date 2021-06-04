@@ -22,7 +22,7 @@ jobs:
           ${{ runner.OS }}-node-
           ${{ runner.OS }}-
 
-    - name: Install CDK and Gatsby
+    - name: Install CDK
       run: npm install -g aws-cdk
 
     - name: Run deploy script
