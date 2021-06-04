@@ -19,4 +19,5 @@ echo Deploying infrastructure...
 
 cd ../infrastructure
 cdk bootstrap
+cdk synth
 cdk deploy -v --require-approval never
