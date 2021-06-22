@@ -61,7 +61,8 @@ export class FuelPriceAlertsStack extends cdk.Stack {
       environment: {
         ...postgresDataApiParams,
         API_NSW_APIKEY: process.env.API_NSW_APIKEY || '',
-        API_NSW_BASICAUTH: process.env.API_NSW_BASICAUTH || ''
+        API_NSW_BASICAUTH: process.env.API_NSW_BASICAUTH || '',
+        EMAIL_LOG: process.env.EMAIL_LOG || ''
       }
     });
 
@@ -155,25 +156,5 @@ export class FuelPriceAlertsStack extends cdk.Stack {
 
     alertSubscriptions.addMethod('POST', new apigateway.LambdaIntegration(alertSubscriptionsHandler));
     alertSubscriptions.addMethod('GET', new apigateway.LambdaIntegration(alertSubscriptionsHandler));
-
-    /*
-
-    const login = new lambda.Function(this, 'FetchPrices', {
-      runtime: lambda.Runtime.NODEJS_14_X,
-      code: lambda.Code.fromAsset('lambda/fromPrices'),
-      handler: 'index.handler'
-    });
-
-    const deleteAccount = new lambda.Function(this, 'FetchPrices', {
-      runtime: lambda.Runtime.NODEJS_14_X,
-      code: lambda.Code.fromAsset('lambda/fromPrices'),
-      handler: 'index.handler'
-    });
-
-    const setupStations = new lambda.Function(this, 'FetchPrices', {
-      runtime: lambda.Runtime.NODEJS_14_X,
-      code: lambda.Code.fromAsset('lambda/fromPrices'),
-      handler: 'index.handler'
-    });*/
   }
 }

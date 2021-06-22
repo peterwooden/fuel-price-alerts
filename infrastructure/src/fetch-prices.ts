@@ -296,6 +296,43 @@ export const handler = async (event: any) => {
         }
     } catch (e) {
         console.log('Error:', e);
+        try {
+            // Send email
+            if (EMAIL_LOG) {
+                const message = `Response: ${JSON.stringify(e.response)}
+                Request: ${JSON.stringify(e.request)}
+                Whole error: ${JSON.stringify(e)}}`;
+                await sesClient.send(
+                    new SendEmailCommand({
+                        Destination: {
+                            ToAddresses: [EMAIL_LOG],
+                        },
+                        Message: {
+                            /* required */
+                            Body: {
+                                /* required */
+                                Html: {
+                                    Charset: 'UTF-8',
+                                    Data: message,
+                                },
+                                Text: {
+                                    Charset: 'UTF-8',
+                                    Data: message,
+                                },
+                            },
+                            Subject: {
+                                Charset: 'UTF-8',
+                                Data: 'Fuel Price Alerts - Error fetching data',
+                            },
+                        },
+                        Source: 'fuel-alerts@peterwooden.com',
+                        ReplyToAddresses: [],
+                    })
+                );
+            }
+        } catch (err) {
+            console.log('Error sending error email:', err);
+        }
     }
 
     console.log('Finished.');
