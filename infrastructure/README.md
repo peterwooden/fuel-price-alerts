@@ -1,14 +1,43 @@
-# Welcome to your CDK TypeScript project!
+# Fuel Price Alerts: infrastructure and backend
 
-This is a blank project for TypeScript development with CDK.
+CDK v2 app with two stacks:
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+- `FuelPriceAlertsStack` (ap-southeast-2): Cognito, the S3 data bucket, the `Ingest` Lambda
+  (every 2 hours) and the `SubscriptionsApi` Lambda (Function URL).
+- `FuelPriceAlertsWeb` (us-east-1): CloudFront, its certificate and the site bucket.
 
-## Useful commands
+There's no database. S3 holds everything; see the layout at the top of `src/store.ts`. The
+design and the cost reasoning are in [`../docs/cost-reduction.md`](../docs/cost-reduction.md).
 
- * `npm run build`   compile typescript to js
- * `npm run watch`   watch for changes and compile
- * `npm run test`    perform the jest unit tests
- * `cdk deploy`      deploy this stack to your default AWS account/region
- * `cdk diff`        compare deployed stack with current state
- * `cdk synth`       emits the synthesized CloudFormation template
+## Code
+
+| File | What it does |
+| --- | --- |
+| `src/trends.ts` | Pure alert logic: weekly time-weighted average, change, who to email. A port of the original SQL, verified identical |
+| `src/ingest.ts` | Scheduled job: fetch → merge → alert → append history → commit state → email |
+| `src/subscriptions.ts` | GET/POST a user's stations, authenticated with a Cognito ID token |
+| `src/store.ts` | S3 persistence: state, stations, subscriptions, daily history files |
+| `scripts/build-state.ts` | Rebuild `state.json.gz` from history (disaster recovery) |
+| `scripts/export-aurora.ts`, `scripts/parity-check.ts` | One-off migration tools, kept for the record |
+
+## Commands
+
+```bash
+npm ci
+npm test            # unit tests, including parity with the original Postgres output
+npm run typecheck
+npx cdk diff        # compare with what's deployed
+../build-and-deploy.sh
+```
+
+Configuration is read at runtime from SSM Parameter Store under `/fuel-price-alerts/`:
+`nsw-api-key`, `nsw-api-basic-auth` (SecureString) and `error-email`.
+
+## Operations
+
+- Run ingest now: `aws lambda invoke --function-name <IngestFunctionName> /dev/stdout`.
+  Pass `{"atTime": "<ISO>"}` to evaluate alerts at another time.
+- If state is lost or corrupted, restore an earlier version (the bucket is versioned for
+  30 days) or rebuild it: `aws s3 sync s3://<bucket> ./data && npx tsx scripts/build-state.ts --dir ./data`,
+  then upload `state.json.gz`.
+- To analyse history, point DuckDB or Athena at `history/prices/*/*.csv.gz` (Hive-style `date=` partitions).

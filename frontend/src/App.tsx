@@ -14,8 +14,8 @@ import { Map, Marker, Bounds } from 'pigeon-maps';
 import { useDebounce } from 'use-debounce';
 import axios from 'axios';
 
-const ALERT_SUBSCRIPTIONS_URL =
-    'https://5r4621gsb7.execute-api.ap-southeast-2.amazonaws.com/prod/alert-subscriptions';
+// Lambda Function URL of the subscriptions API, injected at build time by build-and-deploy.sh.
+const ALERT_SUBSCRIPTIONS_URL = process.env.REACT_APP_API_URL as string;
 
 Amplify.configure({
     Auth: {

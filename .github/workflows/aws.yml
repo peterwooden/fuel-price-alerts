@@ -1,38 +1,42 @@
+name: Test and deploy
 
-on: [push]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
-  build-and-deploy:
-    name: Build and Deploy
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: infrastructure/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  deploy:
+    name: Build and deploy
+    needs: test
+    # Only main deploys; branches and PRs just run the tests.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-
-    - name: Use Node.js
-      uses: actions/setup-node@v2
-      with:
-        node-version: '14.x'
-
-    - name: Cache Node.js modules
-      uses: actions/cache@v2
-      with:
-        path: ~/.npm
-        key: ${{ runner.OS }}-node-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.OS }}-node-
-          ${{ runner.OS }}-
-
-    - name: Install CDK and Gatsby
-      run: npm install -g aws-cdk
-
-    - name: Run deploy script
-      run: |
-        ./build-and-deploy.sh
-      env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - name: Run deploy script
+        run: ./build-and-deploy.sh
+        env:
+          AWS_REGION: ap-southeast-2
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_TARGET_ACCOUNT: ${{ secrets.AWS_TARGET_ACCOUNT }}
-          API_NSW_APIKEY: ${{ secrets.API_NSW_APIKEY }}
-          API_NSW_BASICAUTH: ${{ secrets.API_NSW_BASICAUTH }}
-          EMAIL_LOG: ${{ secrets.EMAIL_LOG }}

@@ -1,160 +1,135 @@
-import * as cdk from '@aws-cdk/core';
-import * as s3 from '@aws-cdk/aws-s3';
-import * as lambda from '@aws-cdk/aws-lambda';
-import * as apigateway from '@aws-cdk/aws-apigateway';
-import * as events from '@aws-cdk/aws-events';
-import * as targets from '@aws-cdk/aws-events-targets';
-import * as rds from '@aws-cdk/aws-rds';
-import { Duration } from '@aws-cdk/core';
-import * as ec2 from '@aws-cdk/aws-ec2';
-import * as cognito from '@aws-cdk/aws-cognito';
-import * as iam from '@aws-cdk/aws-iam';
-import { SPADeploy } from 'cdk-spa-deploy';
-import { SubnetType } from '@aws-cdk/aws-ec2';
-require('dotenv').config();
+import * as path from 'path';
+import { CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import { Construct } from 'constructs';
 
-const SES_REGION = 'ap-southeast-2';
-const SES_EMAIL_FROM = 'peterwooden.com';
+const CONFIG_PREFIX = '/fuel-price-alerts/';
+const SES_IDENTITY = 'peterwooden.com';
 
-export class FuelPriceAlertsStack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
-    super(scope, id, props);
+export interface FuelPriceAlertsStackProps extends StackProps {
+    siteOrigin: string;
+}
 
-    const vpc = new ec2.Vpc(this, 'FuelPriceAlertsVPC', {
-      maxAzs: 2,
-      natGateways: 0,
-      subnetConfiguration: [
-        {
-          subnetType: SubnetType.PUBLIC,
-          name: 'rds-isolated'
-        }
-      ]
-    });
+/**
+ * Backend: Cognito, one S3 bucket as the database, and two Lambdas.
+ * No VPC, no database server, nothing billed by the hour.
+ */
+export class FuelPriceAlertsStack extends Stack {
+    constructor(scope: Construct, id: string, props: FuelPriceAlertsStackProps) {
+        super(scope, id, props);
 
-    const postgres = new rds.ServerlessCluster(this, 'RDS', {
-      engine: rds.DatabaseClusterEngine.AURORA_POSTGRESQL,
-      parameterGroup: rds.ParameterGroup.fromParameterGroupName(this, 'RDSParameterGroup', 'default.aurora-postgresql10'),
-      vpc,
-      defaultDatabaseName: 'postgres',
-      vpcSubnets: {
-        subnetType: SubnetType.PUBLIC
-      },
-      scaling: {
-        autoPause: Duration.minutes(5),
-        minCapacity: rds.AuroraCapacityUnit.ACU_2,
-        maxCapacity: rds.AuroraCapacityUnit.ACU_4
-      }
-    });
+        // Construct IDs and props match the original CDK v1 stack so CloudFormation keeps the
+        // existing pool (and its users) and client in place.
+        const userPool = new cognito.UserPool(this, 'UserPool', {
+            selfSignUpEnabled: true,
+            userVerification: {
+                emailSubject: 'Verify your email for Fuel Price Alerts',
+                emailBody: 'Thanks for signing up to Fuel Price Alerts! Your verification code is {####}',
+                emailStyle: cognito.VerificationEmailStyle.CODE,
+                smsMessage: 'Thanks for signing up to Fuel Price Alerts! Your verification code is {####}',
+            },
+            userInvitation: {
+                emailSubject: 'Invite to join Fuel Price Alerts!',
+                emailBody:
+                    'Hello {username}, you have been invited to join Fuel Price Alerts! Your temporary password is {####}',
+                smsMessage:
+                    'Hello {username}, you have been invited to join Fuel Price Alerts! Your temporary password for Fuel Price Alerts is {####}',
+            },
+            signInAliases: { email: true },
+            standardAttributes: { email: { required: true, mutable: true } },
+            removalPolicy: RemovalPolicy.RETAIN,
+        });
+        const client = userPool.addClient('user-app-client', {
+            authFlows: { userPassword: true, userSrp: true },
+            preventUserExistenceErrors: true,
+        });
 
-    const postgresDataApiParams = {
-      CLUSTER_ARN: postgres.clusterArn,
-      SECRET_ARN: postgres.secret?.secretArn || '',
-      DB_NAME: 'postgres',
-      AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1'
-    };
+        const data = new s3.Bucket(this, 'Data', {
+            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+            encryption: s3.BucketEncryption.S3_MANAGED,
+            enforceSSL: true,
+            versioned: true,
+            lifecycleRules: [
+                { noncurrentVersionExpiration: Duration.days(30) },
+                { abortIncompleteMultipartUploadAfter: Duration.days(1) },
+            ],
+            removalPolicy: RemovalPolicy.RETAIN,
+        });
 
-    const fetchPrices = new lambda.Function(this, 'FetchPrices', {
-      runtime: lambda.Runtime.NODEJS_14_X,
-      code: lambda.Code.fromAsset('src'),
-      handler: 'fetch-prices.handler',
-      timeout: Duration.minutes(10),
-      environment: {
-        ...postgresDataApiParams,
-        API_NSW_APIKEY: process.env.API_NSW_APIKEY || '',
-        API_NSW_BASICAUTH: process.env.API_NSW_BASICAUTH || '',
-        EMAIL_LOG: process.env.EMAIL_LOG || ''
-      }
-    });
+        const fn = (id: string, entry: string, props: Partial<nodejs.NodejsFunctionProps>) =>
+            new nodejs.NodejsFunction(this, id, {
+                entry: path.join(__dirname, '../src', entry),
+                runtime: lambda.Runtime.NODEJS_24_X,
+                architecture: lambda.Architecture.ARM_64,
+                bundling: { minify: true, sourceMap: true, target: 'node24', externalModules: [] },
+                logGroup: new logs.LogGroup(this, `${id}Logs`, {
+                    retention: logs.RetentionDays.THREE_MONTHS,
+                    removalPolicy: RemovalPolicy.DESTROY,
+                }),
+                ...props,
+                environment: {
+                    NODE_OPTIONS: '--enable-source-maps',
+                    DATA_BUCKET: data.bucketName,
+                    ...props.environment,
+                },
+            });
 
-    postgres.grantDataApiAccess(fetchPrices);
+        const ingest = fn('Ingest', 'ingest.ts', {
+            memorySize: 512,
+            timeout: Duration.minutes(2),
+            // One run at a time; state writes are also conditional as a second guard.
+            reservedConcurrentExecutions: 1,
+            retryAttempts: 0,
+            environment: { CONFIG_PREFIX },
+        });
+        data.grantReadWrite(ingest);
+        ingest.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['ssm:GetParameters'],
+                resources: [this.formatArn({ service: 'ssm', resource: 'parameter', resourceName: CONFIG_PREFIX.slice(1) + '*' })],
+            }),
+        );
+        ingest.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+                resources: [this.formatArn({ service: 'ses', resource: 'identity', resourceName: SES_IDENTITY })],
+            }),
+        );
+        new events.Rule(this, 'Schedule', {
+            schedule: events.Schedule.rate(Duration.hours(2)),
+            targets: [new targets.LambdaFunction(ingest, { retryAttempts: 0 })],
+        });
 
+        const api = fn('SubscriptionsApi', 'subscriptions.ts', {
+            memorySize: 256,
+            timeout: Duration.seconds(10),
+            environment: {
+                USER_POOL_ID: userPool.userPoolId,
+                USER_POOL_CLIENT_ID: client.userPoolClientId,
+            },
+        });
+        data.grantReadWrite(api, 'subscriptions/*');
+        const apiUrl = api.addFunctionUrl({
+            authType: lambda.FunctionUrlAuthType.NONE,
+            cors: {
+                allowedOrigins: [props.siteOrigin, 'http://localhost:3000'],
+                allowedMethods: [lambda.HttpMethod.GET, lambda.HttpMethod.POST],
+                allowedHeaders: ['authorization', 'content-type'],
+                maxAge: Duration.days(1),
+            },
+        });
 
-    fetchPrices.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          'ses:SendEmail',
-          'ses:SendRawEmail',
-          'ses:SendTemplatedEmail',
-        ],
-        resources: [
-          `arn:aws:ses:${SES_REGION}:${
-            cdk.Stack.of(this).account
-          }:identity/${SES_EMAIL_FROM}`,
-        ],
-      }),
-    )
-
-    const timerRule = new events.Rule(this, 'TimerRule', {
-      schedule: events.Schedule.rate(Duration.hours(2))
-    });
-
-    timerRule.addTarget(new targets.LambdaFunction(fetchPrices));
-
-
-    const userPool = new cognito.UserPool(this, 'UserPool', {
-      selfSignUpEnabled: true,
-      userVerification: {
-        emailSubject: 'Verify your email for Fuel Price Alerts',
-        emailBody: 'Thanks for signing up to Fuel Price Alerts! Your verification code is {####}',
-        emailStyle: cognito.VerificationEmailStyle.CODE,
-        smsMessage: 'Thanks for signing up to Fuel Price Alerts! Your verification code is {####}',
-      },
-      userInvitation: {
-        emailSubject: 'Invite to join Fuel Price Alerts!',
-        emailBody: 'Hello {username}, you have been invited to join Fuel Price Alerts! Your temporary password is {####}',
-        smsMessage: 'Hello {username}, you have been invited to join Fuel Price Alerts! Your temporary password for Fuel Price Alerts is {####}'
-      },
-      signInAliases: {
-        email: true
-      },
-      standardAttributes: {
-        email: {
-          required: true,
-          mutable: true,
-        }
-      }
-    });
-    const client = userPool.addClient('user-app-client', {
-      authFlows: {
-        userPassword: true,
-        userSrp: true,
-      },
-      preventUserExistenceErrors: true,
-    });
-    const clientId = client.userPoolClientId;
-
-    new SPADeploy(this, 'frontend').createSiteFromHostedZone({
-      indexDoc: 'index.html',
-      errorDoc: 'index.html',
-      websiteFolder: '../frontend/build',
-      zoneName: 'peterwooden.com',
-      subdomain: 'fuelpricealerts'
-    });
-
-    const api = new apigateway.RestApi(this, "rest-api", {
-      defaultCorsPreflightOptions: {
-        allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: apigateway.Cors.ALL_METHODS // this is also the default
-      }
-    });
-
-    const alertSubscriptionsHandler = new lambda.Function(this, 'Alert subscriptions handler', {
-      runtime: lambda.Runtime.NODEJS_14_X,
-      code: lambda.Code.fromAsset('src'),
-      handler: 'alert-subscriptions.handler',
-      timeout: Duration.minutes(2),
-      environment: {
-        ...postgresDataApiParams,
-        COGNITO_POOL_ID: userPool.userPoolId
-      }
-    });
-
-    postgres.grantDataApiAccess(alertSubscriptionsHandler);
-
-    const alertSubscriptions = api.root.addResource('alert-subscriptions');
-
-    alertSubscriptions.addMethod('POST', new apigateway.LambdaIntegration(alertSubscriptionsHandler));
-    alertSubscriptions.addMethod('GET', new apigateway.LambdaIntegration(alertSubscriptionsHandler));
-  }
+        new CfnOutput(this, 'ApiUrl', { value: apiUrl.url });
+        new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
+        new CfnOutput(this, 'UserPoolClientId', { value: client.userPoolClientId });
+        new CfnOutput(this, 'DataBucketName', { value: data.bucketName });
+        new CfnOutput(this, 'IngestFunctionName', { value: ingest.functionName });
+    }
 }
