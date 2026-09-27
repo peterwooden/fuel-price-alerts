@@ -1,8 +1,0 @@
-{
-  "app": "npx tsx bin/app.ts",
-  "context": {
-    "domain": "peterwooden.com",
-    "subdomain": "fuelpricealerts",
-    "hostedZoneId": "Z05956822F62HQUM60NM9"
-  }
-}

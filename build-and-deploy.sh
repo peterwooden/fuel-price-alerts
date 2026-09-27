@@ -1,22 +1,25 @@
 #!/bin/bash
-# Deploy everything: backend + site infrastructure via CDK, then the frontend build.
-# Needs AWS credentials for the account; region-specific bits are set explicitly.
+# Deploy everything: test and bundle the Lambdas, terraform apply, then build and upload the frontend.
+# Needs AWS credentials for the account (GitHub Actions uses the OIDC deploy role).
 set -euo pipefail
 cd "$(dirname "$0")"
 
-echo "Testing and deploying infrastructure..."
-cd infrastructure
-npm ci
-npm test
-npx cdk deploy FuelPriceAlertsStack FuelPriceAlertsWeb --require-approval never --outputs-file cdk-outputs.json
+echo "Testing and bundling backend..."
+(cd backend && npm ci && npm run typecheck && npm test && npm run build)
 
-output() { node -p "require('./cdk-outputs.json').$1"; }
-API_URL=$(output FuelPriceAlertsStack.ApiUrl)
-SITE_BUCKET=$(output FuelPriceAlertsWeb.SiteBucketName)
-DISTRIBUTION_ID=$(output FuelPriceAlertsWeb.DistributionId)
+echo "Applying infrastructure..."
+cd terraform
+terraform init -input=false
+terraform apply -input=false -auto-approve
+output() { terraform output -raw "$1"; }
+API_URL=$(output api_url)
+SITE_BUCKET=$(output site_bucket)
+DISTRIBUTION_ID=$(output distribution_id)
+SITE_URL=$(output site_url)
+cd ..
 
 echo "Building frontend..."
-cd ../frontend
+cd frontend
 npm ci
 REACT_APP_API_URL="$API_URL" npm run build
 
@@ -28,4 +31,4 @@ aws s3 sync build "s3://$SITE_BUCKET" --region us-east-1 --delete --exclude "sta
     --cache-control "no-cache"
 aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" > /dev/null
 
-echo "Deployed to $(cd ../infrastructure && output FuelPriceAlertsWeb.SiteUrl)"
+echo "Deployed to $SITE_URL"

@@ -62,7 +62,7 @@ curl -sI https://fuelpricealerts.peterwooden.com | head -1
 Then sign in at https://fuelpricealerts.peterwooden.com. Your 5 U91 stations should be
 pre-selected. Press Save.
 
-Optionally, re-run `scripts/parity-check.ts --dir ./export --at <now>` while Aurora still exists.
+Optionally, re-run `backend/scripts/parity-check.ts --dir ./export --at <now>` while Aurora still exists.
 
 ### 6. Retire Aurora (only after step 5 passes)
 

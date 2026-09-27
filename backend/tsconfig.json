@@ -11,6 +11,6 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["bin", "lib", "src", "test", "scripts"],
-  "exclude": ["cdk.out", "node_modules"]
+  "include": ["src", "test", "scripts"],
+  "exclude": ["dist", "node_modules"]
 }

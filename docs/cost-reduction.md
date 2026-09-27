@@ -123,7 +123,7 @@ Browser ──> CloudFront + S3 site ──(Cognito ID token)──> Subscriptio
 - **No VPC, no database, no NAT, no Secrets Manager.** The NSW API credentials moved from
   plaintext Lambda environment variables (which were also visible in the CloudFormation
   template) to SSM SecureString parameters.
-- Stacks: `FuelPriceAlertsStack` (ap-southeast-2) is updated in place and keeps the existing
+- Infrastructure is Terraform (`terraform/`). It was first built with CDK: `FuelPriceAlertsStack` (ap-southeast-2) was updated in place and kept the existing
   Cognito pool and client (same logical IDs, verified with `cdk diff`: zero changes to
   them). `FuelPriceAlertsWeb` (us-east-1) holds CloudFront, its certificate, and the site bucket.
 - Upgraded along the way: CDK v1 (end of life in 2023) to v2, Node.js 14 to 24 on arm64,
@@ -131,11 +131,11 @@ Browser ──> CloudFront + S3 site ──(Cognito ID token)──> Subscriptio
 
 ### Correctness: proven against the original SQL
 
-`scripts/parity-check.ts` ran the original Postgres function and alert queries and the
+`backend/scripts/parity-check.ts` ran the original Postgres function and alert queries and the
 new TypeScript engine on identical data at 11 timestamps between 2021 and 2026, including
 five moments when a real alert email went out. **Every trend row (up to 14,352 per run),
 every new-alert decision (up to 1,843 in one run) and every email matched.** A 279-series
-golden fixture captured from Postgres keeps this covered in `npm test`.
+golden fixture captured from Postgres keeps this covered in `npm test` (in `backend/`).
 
 Two quirks of the original were kept on purpose, so that migrating didn't also change
 behaviour. They'd be easy follow-ups:
@@ -145,20 +145,20 @@ behaviour. They'd be easy follow-ups:
 
 ### Data preservation
 
-- `scripts/export-aurora.ts` exports every table. Every day of `prices` and `previous_alerts`
+- `backend/scripts/export-aurora.ts` exports every table. Every day of `prices` and `previous_alerts`
   is checked against a row count and md5-based checksum **computed inside Postgres**. All
   4,059 day files matched on the trial run. The small tables are also copied verbatim with
   the schema (`migration/aurora-export/`).
 - A final Aurora snapshot is kept as a second, independent copy (about $0.02/month).
 - The data bucket is versioned (30 days of old versions) and `RETAIN`ed.
-- `scripts/build-state.ts` rebuilds the hot window from history alone, for disaster recovery.
+- `backend/scripts/build-state.ts` rebuilds the hot window from history alone, for disaster recovery.
 
 ### Historical analysis: Parquet
 
 The daily CSVs stay the append log and source of truth; ingest dedupes against them just as
 the old unique constraint did. Monthly Parquet files (`analytics/prices/month=YYYY-MM/prices.parquet`
 and the alerts equivalent) are derived from them. This keeps the write path simple and makes the
-Parquet always rebuildable (`scripts/build-parquet.ts`), so a Parquet bug can never lose data.
+Parquet always rebuildable (`backend/scripts/build-parquet.ts`), so a Parquet bug can never lose data.
 
 Measured on the full export:
 - **Identical content:** 4,716,057 prices and 261,094 alerts. DuckDB found 0 missing and 0 extra rows versus the CSVs.

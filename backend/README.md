@@ -1,10 +1,7 @@
-# Fuel Price Alerts: infrastructure and backend
+# Fuel Price Alerts: backend
 
-CDK v2 app with two stacks:
-
-- `FuelPriceAlertsStack` (ap-southeast-2): Cognito, the S3 data bucket, the `Ingest` Lambda
-  (every 2 hours) and the `SubscriptionsApi` Lambda (Function URL).
-- `FuelPriceAlertsWeb` (us-east-1): CloudFront, its certificate and the site bucket.
+The two Lambda functions (TypeScript, bundled with esbuild into `dist/`) plus their tests and
+maintenance scripts. Infrastructure is in [`../terraform`](../terraform).
 
 There's no database. S3 holds everything; see the layout at the top of `src/store.ts`. The
 design and the cost reasoning are in [`../docs/cost-reduction.md`](../docs/cost-reduction.md).
@@ -28,7 +25,7 @@ design and the cost reasoning are in [`../docs/cost-reduction.md`](../docs/cost-
 npm ci
 npm test            # unit tests, including parity with the original Postgres output
 npm run typecheck
-npx cdk diff        # compare with what's deployed
+npm run build       # bundle dist/ingest and dist/subscriptions for Terraform
 ../build-and-deploy.sh
 ```
 
@@ -37,7 +34,7 @@ Configuration is read at runtime from SSM Parameter Store under `/fuel-price-ale
 
 ## Operations
 
-- Run ingest now: `aws lambda invoke --function-name <IngestFunctionName> /dev/stdout`.
+- Run ingest now: `aws lambda invoke --function-name fuel-price-alerts-ingest /dev/stdout`.
   Pass `{"atTime": "<ISO>"}` to evaluate alerts at another time.
 - If state is lost or corrupted, restore an earlier version (the bucket is versioned for
   30 days) or rebuild it: `aws s3 sync s3://<bucket> ./data && npx tsx scripts/build-state.ts --dir ./data`,
