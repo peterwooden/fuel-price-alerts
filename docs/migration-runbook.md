@@ -1,7 +1,7 @@
 # Migration runbook: Aurora to S3
 
-Status as of 2026-09-27. Steps 0–2 are done. **Step 3 onwards is waiting for approval**,
-because it replaces production.
+**Completed 2026-09-27.** Kept as a record of what was done and how, and as a reference
+for the recovery steps.
 
 Region is ap-southeast-2 unless stated. Run from `infrastructure/` with admin credentials.
 

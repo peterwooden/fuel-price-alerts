@@ -87,13 +87,13 @@ Monthly estimates for ap-southeast-2 at this workload, excluding shared costs (D
 
 Napkin cost of the chosen design (ap-southeast-2 list prices, before any free tier):
 
-- Lambda: 360 runs × ~5 s × 0.5 GB = 900 GB-s → **$0.012** (well inside the permanent free tier of 400,000 GB-s).
+- Lambda: 360 runs × ~9.4 s × 0.5 GB ≈ 1,700 GB-s → **$0.02** (measured after cutover; well inside the permanent free tier of 400,000 GB-s).
 - S3 requests: ~4 PUT + ~6 GET/LIST per run → ~3,600/month → **$0.01**.
 - S3 storage: 30 MB of history + ~90 MB of 30-day object versions → **$0.003**.
 - Function URL, EventBridge schedule, Cognito (1 user), SSM standard parameters: **free**.
 - CloudFront + S3 for the static site: inside the free tier.
 
-**About $0.02/month against $73.2: a reduction of more than 99.9%.**
+**About $0.02–0.04/month against $73.2: a reduction of more than 99.9%.**
 
 ## 4. Deliver: the new design
 
