@@ -8,14 +8,17 @@ const zoneName: string = app.node.getContext('domain');
 const domainName = `${app.node.getContext('subdomain')}.${zoneName}`;
 const account = process.env.CDK_DEFAULT_ACCOUNT;
 
-new FuelPriceAlertsStack(app, 'FuelPriceAlertsStack', {
+const backend = new FuelPriceAlertsStack(app, 'FuelPriceAlertsStack', {
     env: { account, region: 'ap-southeast-2' },
     siteOrigin: `https://${domainName}`,
 });
 
-new WebStack(app, 'FuelPriceAlertsWeb', {
+const web = new WebStack(app, 'FuelPriceAlertsWeb', {
     env: { account, region: 'us-east-1' },
     domainName,
     zoneName,
     hostedZoneId: app.node.getContext('hostedZoneId'),
 });
+// The domain can only be attached to one CloudFront distribution at a time. The backend
+// stack's update removes the original (CDK v1) distribution, so it must finish first.
+web.addDependency(backend);
