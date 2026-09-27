@@ -12,9 +12,12 @@ import { Construct } from 'constructs';
 
 const CONFIG_PREFIX = '/fuel-price-alerts/';
 const SES_IDENTITY = 'peterwooden.com';
+export const GITHUB_DEPLOY_ROLE_NAME = 'fuel-price-alerts-github-deploy';
 
 export interface FuelPriceAlertsStackProps extends StackProps {
     siteOrigin: string;
+    /** owner/name of the GitHub repo allowed to deploy from main */
+    githubRepo: string;
 }
 
 /**
@@ -125,6 +128,41 @@ export class FuelPriceAlertsStack extends Stack {
                 maxAge: Duration.days(1),
             },
         });
+
+        // GitHub Actions deploys from main by assuming this role via OIDC: no long-lived keys.
+        // It can only hand off to the CDK bootstrap roles and upload the static site.
+        const github = new iam.OpenIdConnectProvider(this, 'GitHubOidc', {
+            url: 'https://token.actions.githubusercontent.com',
+            clientIds: ['sts.amazonaws.com'],
+        });
+        const deployRole = new iam.Role(this, 'GitHubDeployRole', {
+            roleName: GITHUB_DEPLOY_ROLE_NAME,
+            assumedBy: new iam.WebIdentityPrincipal(github.openIdConnectProviderArn, {
+                StringEquals: {
+                    'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+                    'token.actions.githubusercontent.com:sub': `repo:${props.githubRepo}:ref:refs/heads/main`,
+                },
+            }),
+            maxSessionDuration: Duration.hours(1),
+        });
+        deployRole.addToPolicy(
+            new iam.PolicyStatement({
+                actions: ['sts:AssumeRole'],
+                resources: [`arn:aws:iam::${this.account}:role/cdk-hnb659fds-*`],
+            }),
+        );
+        deployRole.addToPolicy(
+            new iam.PolicyStatement({
+                actions: ['s3:ListBucket', 's3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+                resources: ['arn:aws:s3:::fuelpricealertsweb-site*', 'arn:aws:s3:::fuelpricealertsweb-site*/*'],
+            }),
+        );
+        deployRole.addToPolicy(
+            new iam.PolicyStatement({
+                actions: ['cloudfront:CreateInvalidation'],
+                resources: [`arn:aws:cloudfront::${this.account}:distribution/*`],
+            }),
+        );
 
         new CfnOutput(this, 'ApiUrl', { value: apiUrl.url });
         new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });

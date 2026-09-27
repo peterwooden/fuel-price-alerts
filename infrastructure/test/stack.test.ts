@@ -9,6 +9,7 @@ describe('FuelPriceAlertsStack', () => {
     const stack = new FuelPriceAlertsStack(app, 'FuelPriceAlertsStack', {
         env: { account: '123456789012', region: 'ap-southeast-2' },
         siteOrigin: 'https://fuelpricealerts.example.com',
+        githubRepo: 'owner/repo',
     });
     const template = Template.fromStack(stack);
     const resources = template.toJSON().Resources as Record<string, { Type: string; DeletionPolicy?: string }>;
@@ -36,6 +37,33 @@ describe('FuelPriceAlertsStack', () => {
     it('runs ingest every two hours, one at a time', () => {
         template.hasResourceProperties('AWS::Events::Rule', { ScheduleExpression: 'rate(2 hours)' });
         template.hasResourceProperties('AWS::Lambda::Function', { ReservedConcurrentExecutions: 1 });
+    });
+});
+
+describe('GitHub deploy role', () => {
+    it('can only be assumed by the repo main branch via OIDC', () => {
+        const app = new App();
+        const stack = new FuelPriceAlertsStack(app, 'S', {
+            env: { account: '123456789012', region: 'ap-southeast-2' },
+            siteOrigin: 'https://x.example.com',
+            githubRepo: 'owner/repo',
+        });
+        Template.fromStack(stack).hasResourceProperties('AWS::IAM::Role', {
+            RoleName: 'fuel-price-alerts-github-deploy',
+            AssumeRolePolicyDocument: {
+                Statement: [
+                    {
+                        Action: 'sts:AssumeRoleWithWebIdentity',
+                        Condition: {
+                            StringEquals: {
+                                'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+                                'token.actions.githubusercontent.com:sub': 'repo:owner/repo:ref:refs/heads/main',
+                            },
+                        },
+                    },
+                ],
+            },
+        });
     });
 });
 

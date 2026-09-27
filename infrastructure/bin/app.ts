@@ -11,6 +11,7 @@ const account = process.env.CDK_DEFAULT_ACCOUNT;
 const backend = new FuelPriceAlertsStack(app, 'FuelPriceAlertsStack', {
     env: { account, region: 'ap-southeast-2' },
     siteOrigin: `https://${domainName}`,
+    githubRepo: 'peterwooden/fuel-price-alerts',
 });
 
 const web = new WebStack(app, 'FuelPriceAlertsWeb', {
