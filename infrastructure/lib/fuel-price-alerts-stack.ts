@@ -131,13 +131,13 @@ export class FuelPriceAlertsStack extends Stack {
 
         // GitHub Actions deploys from main by assuming this role via OIDC: no long-lived keys.
         // It can only hand off to the CDK bootstrap roles and upload the static site.
-        const github = new iam.OpenIdConnectProvider(this, 'GitHubOidc', {
+        const github = new iam.OidcProviderNative(this, 'GitHubOidc', {
             url: 'https://token.actions.githubusercontent.com',
             clientIds: ['sts.amazonaws.com'],
         });
         const deployRole = new iam.Role(this, 'GitHubDeployRole', {
             roleName: GITHUB_DEPLOY_ROLE_NAME,
-            assumedBy: new iam.WebIdentityPrincipal(github.openIdConnectProviderArn, {
+            assumedBy: new iam.WebIdentityPrincipal(github.oidcProviderArn, {
                 StringEquals: {
                     'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
                     'token.actions.githubusercontent.com:sub': `repo:${props.githubRepo}:ref:refs/heads/main`,
