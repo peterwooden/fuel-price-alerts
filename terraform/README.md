@@ -7,7 +7,7 @@ All AWS infrastructure for Fuel Price Alerts. Lambda code is bundled from `../ba
 | --- | --- |
 | `cognito.tf` | User pool and web client (both `prevent_destroy`: they hold real accounts) |
 | `data.tf` | The S3 data bucket that replaced Postgres (versioned, `prevent_destroy`) |
-| `lambda.tf` | Ingest (every 2 hours) and the subscriptions API (Function URL) |
+| `lambda.tf` | Ingest (every 2 hours), the subscriptions API and the public API (Function URLs) |
 | `web.tf` | Site bucket, CloudFront, ACM certificate (us-east-1), DNS records |
 | `github.tf` | OIDC trust and the role GitHub Actions deploys with |
 

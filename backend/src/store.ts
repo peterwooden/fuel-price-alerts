@@ -6,9 +6,11 @@
 //   history/prices/date=YYYY-MM-DD/prices.csv.gz  full price history, one file per UTC day
 //   history/alerts/date=YYYY-MM-DD/alerts.csv.gz  every alert ever raised, one file per UTC day
 //   analytics/{prices,alerts}/month=YYYY-MM/*.parquet  monthly Parquet copies for analysis (see parquet.ts)
+//   public/sydney-prices.json.gz                recent Sydney prices for the site (see sydney-prices.ts)
 //
 // History files are append-only (read, merge, rewrite) and are the source of truth; the
-// Parquet files are derived from them. The Lambda only reads state.json.gz on the hot path.
+// Parquet and public files are derived from them. The Lambda only reads state.json.gz on the hot path.
+// Only public/ is ever served without authentication.
 
 import { gunzipSync, gzipSync } from 'zlib';
 import {
@@ -19,6 +21,7 @@ import {
     S3Client,
 } from '@aws-sdk/client-s3';
 import { Dataset, historyToParquet } from './parquet';
+import { buildSydneyPrices, sydneyPricesDays, sydneyPricesWindow } from './sydney-prices';
 import type { SeriesMap, StationMap, Subscription } from './trends';
 
 export interface State {
@@ -45,6 +48,7 @@ export const keys = {
     alertHistory: (day: string) => `history/alerts/date=${day}/alerts.csv.gz`,
     historyMonthPrefix: (dataset: Dataset, month: string) => `history/${dataset}/date=${month}-`,
     analytics: (dataset: Dataset, month: string) => `analytics/${dataset}/month=${month}/${dataset}.parquet`,
+    sydneyPrices: 'public/sydney-prices.json.gz',
 };
 
 /** UTC calendar day of an ISO timestamp, used to partition history. */
@@ -61,14 +65,20 @@ export class Store {
         private readonly s3: S3Client = new S3Client({}),
     ) {}
 
-    async getText(key: string): Promise<Stored<string> | undefined> {
+    /** An object's bytes exactly as stored (still gzipped for .gz keys). */
+    async getBytes(key: string): Promise<Stored<Uint8Array> | undefined> {
         try {
             const res = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
-            return { value: decode(await res.Body!.transformToByteArray()), etag: res.ETag };
+            return { value: await res.Body!.transformToByteArray(), etag: res.ETag };
         } catch (e) {
             if (e instanceof NoSuchKey) return undefined;
             throw e;
         }
+    }
+
+    async getText(key: string): Promise<Stored<string> | undefined> {
+        const bytes = await this.getBytes(key);
+        return bytes && { value: decode(bytes.value), etag: bytes.etag };
     }
 
     /**
@@ -143,6 +153,21 @@ export class Store {
             }),
         );
         return rows.length;
+    }
+
+    /** Regenerate public/sydney-prices.json.gz as of time t from the daily price CSVs. */
+    async rebuildSydneyPrices(stations: StationMap, t: number) {
+        const { from, to } = sydneyPricesWindow(t);
+        const days = sydneyPricesDays(from, to);
+        const rows: string[][] = [];
+        // A handful of small GETs at a time: ~75 files of ~30 KB each.
+        for (let i = 0; i < days.length; i += 8) {
+            const texts = await Promise.all(days.slice(i, i + 8).map((day) => this.getText(keys.priceHistory(day))));
+            for (const text of texts) if (text) rows.push(...parseCsv(text.value));
+        }
+        const prices = buildSydneyPrices(rows, stations, from, to);
+        await this.putJson(keys.sydneyPrices, prices);
+        return prices.stations.length;
     }
 
     /**

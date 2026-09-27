@@ -123,6 +123,8 @@ export async function ingest({ store, fetchPrices, sendAlertEmails }: IngestDeps
     const priceMonths = new Set([...newRowsByDay.keys()].map(utcMonth));
     for (const month of priceMonths) await store.rebuildMonthlyParquet('prices', month);
     if (newAlerts.length) await store.rebuildMonthlyParquet('alerts', utcMonth(alertTime));
+    // And the public Sydney prices the site's price-waves page reads, derived the same way.
+    const sydneyStations = newRowsByDay.size ? await store.rebuildSydneyPrices(stations, t) : 0;
 
     return {
         at: alertTime,
@@ -134,6 +136,7 @@ export async function ingest({ store, fetchPrices, sendAlertEmails }: IngestDeps
         newAlerts: newAlerts.length,
         emailsSent,
         parquetMonthsRebuilt: priceMonths.size + (newAlerts.length ? 1 : 0),
+        sydneyStations,
     };
 }
 

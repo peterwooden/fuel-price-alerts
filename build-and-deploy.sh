@@ -13,6 +13,7 @@ terraform init -input=false
 terraform apply -input=false -auto-approve
 output() { terraform output -raw "$1"; }
 API_URL=$(output api_url)
+PUBLIC_API_URL=$(output public_api_url)
 SITE_BUCKET=$(output site_bucket)
 DISTRIBUTION_ID=$(output distribution_id)
 SITE_URL=$(output site_url)
@@ -21,7 +22,7 @@ cd ..
 echo "Building frontend..."
 cd frontend
 npm ci
-REACT_APP_API_URL="$API_URL" npm run build
+REACT_APP_API_URL="$API_URL" REACT_APP_PUBLIC_API_URL="$PUBLIC_API_URL" npm run build
 
 echo "Uploading frontend..."
 # Hashed assets can be cached forever; everything else must revalidate.

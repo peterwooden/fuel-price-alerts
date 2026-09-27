@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ingest } from '../src/ingest';
 import { NswPrice, NswStation } from '../src/nsw-api';
 import { keys, State, Store } from '../src/store';
+import type { SydneyPrices } from '../src/sydney-prices';
 import { AlertEmail } from '../src/trends';
 import { FakeS3 } from './fake-s3';
 
@@ -86,6 +87,11 @@ describe('ingest', () => {
         // Parquet copies of the touched months are refreshed.
         expect(s3.objects.has(keys.analytics('prices', '2026-09'))).toBe(true);
         expect(s3.objects.has(keys.analytics('alerts', '2026-09'))).toBe(true);
+        // So is the public Sydney prices file. It's built from history, which only holds the new price.
+        const sydney = s3.json<SydneyPrices>(keys.sydneyPrices);
+        expect(sydney.stations.map((s) => s.code)).toEqual(['100']);
+        expect(sydney.series.U91).toEqual([[0, [(Date.parse('2026-09-26T23:06:45Z') - Date.parse(sydney.from)) / 60000 | 0, 1999]]]);
+        expect(summary.sydneyStations).toBe(1);
     });
 
     it('is idempotent: re-running with the same data writes no history and sends nothing new', async () => {

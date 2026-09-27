@@ -1,4 +1,4 @@
-# Two Lambdas built by `npm run build` in backend/ (esbuild -> backend/dist/<name>/index.js).
+# Three Lambdas built by `npm run build` in backend/ (esbuild -> backend/dist/<name>/index.js).
 
 data "archive_file" "ingest" {
   type        = "zip"
@@ -10,6 +10,12 @@ data "archive_file" "subscriptions" {
   type        = "zip"
   source_dir  = "${path.module}/../backend/dist/subscriptions"
   output_path = "${path.module}/.build/subscriptions.zip"
+}
+
+data "archive_file" "public_api" {
+  type        = "zip"
+  source_dir  = "${path.module}/../backend/dist/public-api"
+  output_path = "${path.module}/.build/public-api.zip"
 }
 
 data "aws_iam_policy_document" "lambda_assume" {
@@ -205,6 +211,96 @@ resource "aws_lambda_permission" "subscriptions_invoke" {
   statement_id             = "AllowInvokeViaFunctionUrl"
   action                   = "lambda:InvokeFunction"
   function_name            = aws_lambda_function.subscriptions.function_name
+  principal                = "*"
+  invoked_via_function_url = true
+}
+
+# ---- Public API: serves the derived files under public/ (recent Sydney prices), no sign-in ----
+
+resource "aws_cloudwatch_log_group" "public_api" {
+  name              = "/aws/lambda/${local.name}-public-api"
+  retention_in_days = 90
+}
+
+resource "aws_iam_role" "public_api" {
+  name               = "${local.name}-public-api"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy" "public_api" {
+  role   = aws_iam_role.public_api.id
+  policy = data.aws_iam_policy_document.public_api.json
+}
+
+# Read-only, and only public/: nothing else in the bucket is reachable without signing in.
+data "aws_iam_policy_document" "public_api" {
+  statement {
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.public_api.arn}:*"]
+  }
+  # ListBucket makes a file that isn't built yet a 404 rather than 403.
+  statement {
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.data.arn]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["public/*"]
+    }
+  }
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.data.arn}/public/*"]
+  }
+}
+
+resource "aws_lambda_function" "public_api" {
+  function_name    = "${local.name}-public-api"
+  role             = aws_iam_role.public_api.arn
+  runtime          = "nodejs24.x"
+  architectures    = ["arm64"]
+  handler          = "index.handler"
+  filename         = data.archive_file.public_api.output_path
+  source_code_hash = data.archive_file.public_api.output_base64sha256
+  memory_size      = 256
+  timeout          = 10
+
+  environment {
+    variables = {
+      NODE_OPTIONS = "--enable-source-maps"
+      DATA_BUCKET  = aws_s3_bucket.data.id
+    }
+  }
+
+  logging_config {
+    log_format = "Text"
+    log_group  = aws_cloudwatch_log_group.public_api.name
+  }
+}
+
+resource "aws_lambda_function_url" "public_api" {
+  function_name      = aws_lambda_function.public_api.function_name
+  authorization_type = "NONE" # public data only; see the role policy above
+
+  cors {
+    allow_origins = [local.site_origin, "http://localhost:3000"]
+    allow_methods = ["GET"]
+    max_age       = 86400
+  }
+}
+
+resource "aws_lambda_permission" "public_api_url" {
+  statement_id           = "AllowPublicFunctionUrl"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.public_api.function_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}
+
+resource "aws_lambda_permission" "public_api_invoke" {
+  statement_id             = "AllowInvokeViaFunctionUrl"
+  action                   = "lambda:InvokeFunction"
+  function_name            = aws_lambda_function.public_api.function_name
   principal                = "*"
   invoked_via_function_url = true
 }

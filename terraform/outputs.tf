@@ -2,6 +2,10 @@ output "api_url" {
   value = aws_lambda_function_url.subscriptions.function_url
 }
 
+output "public_api_url" {
+  value = aws_lambda_function_url.public_api.function_url
+}
+
 output "user_pool_id" {
   value = aws_cognito_user_pool.users.id
 }
