@@ -17,7 +17,9 @@ design and the cost reasoning are in [`../docs/cost-reduction.md`](../docs/cost-
 | `src/ingest.ts` | Scheduled job: fetch → merge → alert → append history → commit state → email |
 | `src/subscriptions.ts` | GET/POST a user's stations, authenticated with a Cognito ID token |
 | `src/store.ts` | S3 persistence: state, stations, subscriptions, daily history files |
+| `src/parquet.ts` | Monthly Parquet copies of history for analysis |
 | `scripts/build-state.ts` | Rebuild `state.json.gz` from history (disaster recovery) |
+| `scripts/build-parquet.ts` | Rebuild every monthly Parquet file from history |
 | `scripts/export-aurora.ts`, `scripts/parity-check.ts` | One-off migration tools, kept for the record |
 
 ## Commands
@@ -40,4 +42,6 @@ Configuration is read at runtime from SSM Parameter Store under `/fuel-price-ale
 - If state is lost or corrupted, restore an earlier version (the bucket is versioned for
   30 days) or rebuild it: `aws s3 sync s3://<bucket> ./data && npx tsx scripts/build-state.ts --dir ./data`,
   then upload `state.json.gz`.
-- To analyse history, point DuckDB or Athena at `history/prices/*/*.csv.gz` (Hive-style `date=` partitions).
+- To analyse history, query `analytics/prices/*/*.parquet` (Hive-style `month=` partitions) with
+  DuckDB, Athena or pandas. There's an example in `docs/cost-reduction.md`. The CSVs under `history/`
+  are the source of truth; `scripts/build-parquet.ts` regenerates the Parquet files from them.

@@ -83,6 +83,9 @@ describe('ingest', () => {
         expect(state.series['100|U91'].map((p) => p[1])).toEqual(['180', '199.9']);
         expect(state.lastAlert['100|U91']).toBe(t);
         expect(s3.json<Record<string, unknown>>(keys.stations)['100']).toMatchObject({ name: 'Shell 100', latitude: -33.9 });
+        // Parquet copies of the touched months are refreshed.
+        expect(s3.objects.has(keys.analytics('prices', '2026-09'))).toBe(true);
+        expect(s3.objects.has(keys.analytics('alerts', '2026-09'))).toBe(true);
     });
 
     it('is idempotent: re-running with the same data writes no history and sends nothing new', async () => {
@@ -91,7 +94,7 @@ describe('ingest', () => {
         s3.puts = [];
         const summary = await run(prices, t + 2 * 60 * 60 * 1000);
         expect(summary).toMatchObject({ newPrices: 0, newAlerts: 0, emailsSent: 0 });
-        expect(s3.puts).toEqual([keys.state]);
+        expect(s3.puts).toEqual([keys.state]); // no history, stations or Parquet rewrites
     });
 
     it('does not duplicate history rows that were written by a run that failed before committing state', async () => {

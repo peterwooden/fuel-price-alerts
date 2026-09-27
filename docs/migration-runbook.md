@@ -46,7 +46,8 @@ BUCKET=$(node -p "require('./cdk-outputs.json').FuelPriceAlertsStack.DataBucketN
 INGEST=$(node -p "require('./cdk-outputs.json').FuelPriceAlertsStack.IngestFunctionName")
 npx tsx scripts/export-aurora.ts --cluster $CLUSTER --secret $SECRET --out ./export   # aborts on any checksum mismatch
 npx tsx scripts/build-state.ts --dir ./export
-aws s3 sync ./export s3://$BUCKET/ --exclude '*.gz'
+npx tsx scripts/build-parquet.ts --dir ./export
+aws s3 sync ./export s3://$BUCKET/ --exclude '*.gz'   # includes analytics/*.parquet
 aws s3 sync ./export s3://$BUCKET/ --exclude '*' --include '*.gz' --content-encoding gzip
 ```
 

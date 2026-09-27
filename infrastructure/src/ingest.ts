@@ -12,6 +12,7 @@ import {
     priceIdentity,
     Store,
     utcDay,
+    utcMonth,
 } from './store';
 import {
     AlertEmail,
@@ -117,6 +118,12 @@ export async function ingest({ store, fetchPrices, sendAlertEmails }: IngestDeps
     // Emails go out after the alerts are committed, so a retry never double-sends.
     const emailsSent = await sendAlertEmails(emails);
 
+    // Last, refresh the Parquet copies of any month that changed. They're derived from the
+    // CSVs, so a failure here loses nothing and is repaired by the next run touching that month.
+    const priceMonths = new Set([...newRowsByDay.keys()].map(utcMonth));
+    for (const month of priceMonths) await store.rebuildMonthlyParquet('prices', month);
+    if (newAlerts.length) await store.rebuildMonthlyParquet('alerts', utcMonth(alertTime));
+
     return {
         at: alertTime,
         stations: api.stations.length,
@@ -126,6 +133,7 @@ export async function ingest({ store, fetchPrices, sendAlertEmails }: IngestDeps
         trends: trends.length,
         newAlerts: newAlerts.length,
         emailsSent,
+        parquetMonthsRebuilt: priceMonths.size + (newAlerts.length ? 1 : 0),
     };
 }
 

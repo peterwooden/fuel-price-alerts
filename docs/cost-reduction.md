@@ -80,6 +80,8 @@ Monthly estimates for ap-southeast-2 at this workload, excluding shared costs (D
 | RDS PostgreSQL db.t4g.micro + 20 GB | ~23 | runs 24/7 for a job that runs 12×/day |
 | EC2 t4g.nano + self-managed Postgres | ~8 | includes public IPv4 ($3.65); you become the DBA |
 | Aurora DSQL (serverless Postgres-compatible) | low single $ (rough) | no PL/pgSQL functions or views, so a rewrite anyway; still pays per query for a full-window scan |
+| TigerBeetle | ~15+ | a financial-ledger database (accounts and transfers) that runs as a 3–6 node always-on cluster: wrong data model, and back to hourly billing |
+| S3 Tables / Iceberg | ~1+ | managed compaction and per-table fees for 30 MB of data |
 | DynamoDB on-demand | ~0.5 | 1 GB storage at $0.285/GB; time-window access needs a data model; still more than needed |
 | **S3 + Lambda, "files as the database"** | **~0.02** | chosen |
 
@@ -105,6 +107,7 @@ EventBridge (every 2h) ──> Ingest Lambda ──> NSW FuelCheck API
                        subscriptions/<user>.json
                        history/prices/date=YYYY-MM-DD/prices.csv.gz
                        history/alerts/date=YYYY-MM-DD/alerts.csv.gz
+                       analytics/{prices,alerts}/month=YYYY-MM/*.parquet
                                 ▲
 Browser ──> CloudFront + S3 site ──(Cognito ID token)──> Subscriptions Lambda (Function URL)
 ```
@@ -112,6 +115,8 @@ Browser ──> CloudFront + S3 site ──(Cognito ID token)──> Subscriptio
 - **Ingest** loads `state.json.gz`, fetches the API, merges new points, computes trends and
   alerts in memory, appends to the day's history files, commits state with an S3
   conditional write, then sends emails.
+- **Analysis copy in Parquet.** After each run, ingest rebuilds the monthly Parquet file for
+  any month it touched (details under "Historical analysis" below).
 - **Subscriptions API** is a Lambda Function URL. It verifies the Cognito ID token with
   `aws-jwt-verify`, which checks audience and token use (the old code checked neither), and
   reads or writes one small JSON object per user.
@@ -148,10 +153,32 @@ behaviour. They'd be easy follow-ups:
 - The data bucket is versioned (30 days of old versions) and `RETAIN`ed.
 - `scripts/build-state.ts` rebuilds the hot window from history alone, for disaster recovery.
 
+### Historical analysis: Parquet
+
+The daily CSVs stay the append log and source of truth; ingest dedupes against them just as
+the old unique constraint did. Monthly Parquet files (`analytics/prices/month=YYYY-MM/prices.parquet`
+and the alerts equivalent) are derived from them. This keeps the write path simple and makes the
+Parquet always rebuildable (`scripts/build-parquet.ts`), so a Parquet bug can never lose data.
+
+Measured on the full export:
+- **Identical content:** 4,716,057 prices and 261,094 alerts. DuckDB found 0 missing and 0 extra rows versus the CSVs.
+- **Typed columns:** `price` is a double and `timestamp` a UTC timestamp, sorted by station, fuel and time.
+- **Size:** 21.5 MB against 28.4 MB of gzipped CSV. Only about 25% smaller with Snappy, because gzip
+  already compresses this narrow data well. Delta-encoding the timestamps didn't help.
+- **Speed:** a typical query (average price by fuel this month) took 0.04 s against 1.04 s over the CSVs.
+- **Cost:** about 107 extra small objects and roughly one extra GET+PUT per run: fractions of a cent.
+
+```sql
+-- DuckDB (install httpfs; run `CREATE SECRET (TYPE s3, PROVIDER credential_chain)` first)
+SELECT fuel_type, date_trunc('week', timestamp) AS week, avg(price)
+FROM read_parquet('s3://<bucket>/analytics/prices/*/*.parquet', hive_partitioning = true)
+WHERE station_code = '2362'
+GROUP BY ALL ORDER BY week;
+```
+
 ### Trade-offs accepted
 
-- No live SQL. For analysis, query the history files with DuckDB or Athena, for example
-  `SELECT * FROM read_csv('s3://<bucket>/history/prices/*/*.csv.gz', hive_partitioning=true)`.
+- No live SQL database; analysis runs over the Parquet files instead (above).
 - Single writer. This is enforced by reserved concurrency 1 plus conditional writes on state.
 - Emails are at-most-once, the same as before: alerts are committed before sending.
 
