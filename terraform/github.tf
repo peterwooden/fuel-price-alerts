@@ -96,9 +96,23 @@ data "aws_iam_policy_document" "github_deploy" {
     actions   = ["route53:GetHostedZone", "route53:ListResourceRecordSets", "route53:ChangeResourceRecordSets", "route53:GetChange", "route53:ListTagsForResource"]
     resources = ["arn:aws:route53:::hostedzone/${local.zone_id}", "arn:aws:route53:::change/*"]
   }
+  # Terraform's refresh calls some list/describe APIs that can't be scoped to one resource.
+  # Read-only metadata; writes stay limited to this project's resources above.
   statement {
-    sid       = "ReadOnlyLookups"
-    actions   = ["sts:GetCallerIdentity", "iam:ListOpenIDConnectProviders", "ssm:DescribeParameters", "s3:ListAllMyBuckets"]
+    sid = "ReadOnlyLookups"
+    actions = [
+      "sts:GetCallerIdentity",
+      "iam:Get*", "iam:List*",
+      "logs:Describe*", "logs:ListTagsForResource", "logs:ListTagsLogGroup",
+      "lambda:Get*", "lambda:List*",
+      "events:Describe*", "events:List*",
+      "cognito-idp:Describe*", "cognito-idp:Get*", "cognito-idp:List*",
+      "cloudfront:Get*", "cloudfront:List*",
+      "acm:Describe*", "acm:List*", "acm:Get*",
+      "route53:Get*", "route53:List*",
+      "s3:ListAllMyBuckets", "s3:GetBucketLocation",
+      "ssm:DescribeParameters",
+    ]
     resources = ["*"]
   }
 }
