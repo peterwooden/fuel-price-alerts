@@ -3,8 +3,9 @@
 Emails you when fuel at your chosen NSW stations rises more than 5% above its average over
 the past week. Live at https://fuelpricealerts.peterwooden.com.
 
-- `frontend/`: React app (station picker, Cognito sign-in).
-- `backend/`: the two Lambdas (TypeScript) and their tests.
+- `frontend/`: React app (station picker, Cognito sign-in), plus a public page at `/waves` showing how
+  price changes spread across Sydney: when each station followed a move, by brand and on a map, with a replay.
+- `backend/`: the three Lambdas (TypeScript) and their tests.
 - `terraform/`: all AWS infrastructure.
 - `docs/cost-reduction.md`: why this runs on S3 and Lambda instead of Aurora
   (from about $73/month to about $0.02/month).

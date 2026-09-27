@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import './App.css';
 import Amplify, { Auth } from 'aws-amplify';
 import { withAuthenticator } from '@aws-amplify/ui-react';
@@ -13,6 +13,9 @@ import Stations from './stations';
 import { Map, Marker, Bounds } from 'pigeon-maps';
 import { useDebounce } from 'use-debounce';
 import axios from 'axios';
+
+// Public, no sign-in needed; loaded only when visited.
+const WavesPage = React.lazy(() => import('./waves/WavesPage'));
 
 // Lambda Function URL of the subscriptions API, injected at build time by build-and-deploy.sh.
 const ALERT_SUBSCRIPTIONS_URL = process.env.REACT_APP_API_URL as string;
@@ -277,7 +280,17 @@ function App() {
                     Welcome to Fuel Price Alerts!{' '}
                     <Link to="/account" className="underline text-blue-600">
                         Sign in/Sign up
+                    </Link>{' '}
+                    or see{' '}
+                    <Link to="/waves" className="underline text-blue-600">
+                        how price changes move through Sydney
                     </Link>
+                    .
+                </Route>
+                <Route path="/waves">
+                    <Suspense fallback={null}>
+                        <WavesPage />
+                    </Suspense>
                 </Route>
                 <Route path="/account">
                     <AccountPage />

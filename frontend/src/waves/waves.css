@@ -1,0 +1,367 @@
+/* Price-waves page. Colours match colors.ts. */
+.waves {
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, 0.1);
+    --accent: #2a78d6;
+    min-height: 100vh;
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.waves-lede {
+    color: var(--ink-2);
+    margin-top: 0.25rem;
+    line-height: 1.5;
+}
+.waves-status {
+    margin-top: 1.5rem;
+}
+
+.waves-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 1.25rem;
+    margin: 1.25rem 0 0.75rem;
+}
+.waves-controls label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.8rem;
+    color: var(--ink-2);
+    gap: 0.2rem;
+    max-width: 100%;
+}
+.waves select,
+.waves-button {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--surface);
+    color: var(--ink);
+    padding: 0.35rem 0.6rem;
+    font-size: 0.9rem;
+    max-width: 100%;
+}
+.waves-button {
+    font-weight: 600;
+    min-width: 5rem;
+}
+.waves-button:hover,
+.waves-segmented button:hover:not(.active) {
+    background: #f0efec;
+}
+
+.waves-segmented {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: var(--surface);
+}
+.waves-segmented button {
+    padding: 0.35rem 0.8rem;
+    font-size: 0.9rem;
+    color: var(--ink-2);
+}
+.waves-segmented button + button {
+    border-left: 1px solid var(--border);
+}
+.waves-segmented button.active {
+    background: var(--ink);
+    color: #fff;
+    font-weight: 600;
+}
+.waves button:focus-visible,
+.waves select:focus-visible,
+.waves summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.waves-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    min-width: 0;
+}
+.waves-card-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.waves-card-title {
+    font-weight: 600;
+}
+.waves-card-subtitle {
+    color: var(--ink-2);
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+.waves-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0 1rem;
+}
+@media (min-width: 1024px) {
+    .waves-grid {
+        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    }
+}
+
+.waves-window {
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.waves-headline {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-top: 0.25rem;
+}
+.waves-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.9rem;
+}
+.waves-tile {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.6rem 0.75rem;
+}
+.waves-tile-label {
+    font-size: 0.8rem;
+    color: var(--ink-2);
+}
+.waves-tile-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+.waves-tile-note {
+    font-size: 0.75rem;
+    color: var(--muted);
+}
+
+/* Charts */
+.waves-chart svg {
+    display: block;
+    overflow: visible;
+}
+.waves-chart-title {
+    font-size: 12px;
+    font-weight: 600;
+    fill: var(--ink-2);
+}
+.waves-tick {
+    font-size: 11px;
+    fill: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+.waves-row-label {
+    font-size: 12px;
+    font-weight: 600;
+    fill: var(--ink);
+}
+.waves-selection {
+    fill: rgba(42, 120, 214, 0.1);
+    stroke: rgba(42, 120, 214, 0.55);
+    stroke-width: 1;
+    pointer-events: none;
+}
+.waves-tooltip {
+    position: absolute;
+    z-index: 10;
+    pointer-events: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 16px rgba(11, 11, 11, 0.12);
+    padding: 0.45rem 0.6rem;
+    font-size: 0.8rem;
+    color: var(--ink-2);
+    max-width: 220px;
+}
+.waves-tooltip strong {
+    color: var(--ink);
+}
+.waves-tooltip-title {
+    color: var(--ink);
+    font-weight: 600;
+    margin-bottom: 0.15rem;
+}
+.waves-tooltip-hint {
+    color: var(--muted);
+    margin-top: 0.2rem;
+    font-size: 0.7rem;
+}
+.waves-key {
+    display: inline-block;
+    width: 10px;
+    height: 3px;
+    border-radius: 2px;
+    margin-right: 0.35rem;
+    vertical-align: middle;
+}
+
+/* Map */
+.waves-map {
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+.waves-map .pigeon-tiles {
+    filter: grayscale(1) contrast(0.8) brightness(1.08);
+}
+.waves-legend,
+.waves-clock {
+    position: absolute;
+    background: rgba(252, 252, 251, 0.94);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+}
+.waves-legend {
+    left: 0.6rem;
+    bottom: 1.6rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.75rem;
+    color: var(--ink-2);
+    width: 13.5rem;
+}
+.waves-legend-title {
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 0.3rem;
+}
+.waves-gradient {
+    height: 10px;
+    border-radius: 2px;
+}
+.waves-legend-scale {
+    display: flex;
+    justify-content: space-between;
+    font-variant-numeric: tabular-nums;
+    margin-top: 0.15rem;
+}
+.waves-legend-note {
+    margin-top: 0.2rem;
+    font-variant-numeric: tabular-nums;
+}
+.waves-legend-item {
+    margin-top: 0.35rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.waves-ring {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1.5px solid var(--muted);
+    background: var(--surface);
+}
+.waves-ring.pulse {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(227, 73, 72, 0.5);
+    background: radial-gradient(circle, #e34948 0 3px, transparent 3.5px);
+}
+.waves-clock {
+    left: 0.6rem;
+    top: 0.6rem;
+    padding: 0.3rem 0.6rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.waves-replay {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1 1 16rem;
+    min-width: 0;
+}
+.waves-replay input[type='range'] {
+    flex: 1;
+    min-width: 6rem;
+    accent-color: var(--ink);
+}
+
+.waves-first {
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
+}
+.waves-first li {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.2rem 0.3rem;
+    border-radius: 0.3rem;
+}
+.waves-first li.active {
+    background: #f0efec;
+}
+.waves-first-time {
+    flex: 0 0 auto;
+    min-width: 4.5rem;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+}
+.waves-first-brand {
+    color: var(--muted);
+}
+
+/* Table view */
+.waves-table summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+.waves-table table {
+    width: 100%;
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+    border-collapse: collapse;
+}
+.waves-table th {
+    text-align: left;
+    color: var(--ink-2);
+    font-weight: 600;
+    border-bottom: 1px solid var(--grid);
+    padding: 0.3rem 0.5rem 0.3rem 0;
+}
+.waves-table td {
+    border-bottom: 1px solid var(--grid);
+    padding: 0.25rem 0.5rem 0.25rem 0;
+}
+.waves-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.waves-footnote {
+    font-size: 0.8rem;
+    color: var(--muted);
+    max-width: 60rem;
+    line-height: 1.5;
+    margin-bottom: 2rem;
+}
+
+@media (max-width: 480px) {
+    .waves-tile-value {
+        font-size: 1.2rem;
+    }
+    .waves-legend {
+        width: 11rem;
+        font-size: 0.7rem;
+        padding: 0.4rem 0.5rem;
+    }
+}
